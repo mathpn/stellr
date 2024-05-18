@@ -1,2 +1,4 @@
 # stellr
-Tiny full-text search engine
+
+A full-text search engine, but tiny.
+
