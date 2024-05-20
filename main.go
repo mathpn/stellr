@@ -21,15 +21,15 @@ func tokenize(text string) []string {
 }
 
 type MutableTextIndex interface {
-	Search(query string) []int
+	Search(query string, tokenizer func(string) []string) []int
 	Add(tokens []string, id int)
 }
 
 type hashmapIndex map[string][]int
 
-func (index hashmapIndex) Search(query string) []int {
+func (index hashmapIndex) Search(query string, tokenizer func(string) []string) []int {
 	var r []int
-	for _, token := range tokenize(query) {
+	for _, token := range tokenizer(query) {
 		if ids, ok := index[token]; ok {
 			if r == nil {
 				r = ids
@@ -80,7 +80,7 @@ func main() {
 	for i, tokens := range tokenized_corpus {
 		index.Add(tokens, i)
 	}
-	matching_ids := index.Search("ut")
+	matching_ids := index.Search("ut", tokenize)
 	for _, id := range matching_ids {
 		fmt.Println(corpus[id])
 	}
