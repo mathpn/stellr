@@ -20,14 +20,33 @@ func tokenize(text string) []string {
 	})
 }
 
-func buildIndex(corpus [][]string) map[string][]int {
-	index := make(map[string][]int, 0)
-	for i, tokens := range corpus {
-		for _, token := range tokens {
-			index[token] = append(index[token], i)
+type MutableTextIndex interface {
+	Search(query string) []int
+	Add(tokens []string, id int)
+}
+
+type hashmapIndex map[string][]int
+
+func (index hashmapIndex) Search(query string) []int {
+	var r []int
+	for _, token := range tokenize(query) {
+		if ids, ok := index[token]; ok {
+			if r == nil {
+				r = ids
+			} else {
+				r = intersection(r, ids)
+			}
+		} else {
+			return nil
 		}
 	}
-	return index
+	return r
+}
+
+func (index hashmapIndex) Add(tokens []string, id int) {
+	for _, token := range tokens {
+		index[token] = append(index[token], id)
+	}
 }
 
 func intersection(a []int, b []int) []int {
@@ -51,30 +70,17 @@ func intersection(a []int, b []int) []int {
 	return r
 }
 
-func search(query string, index map[string][]int) []int {
-	var r []int
-	for _, token := range tokenize(query) {
-		if ids, ok := index[token]; ok {
-			if r == nil {
-				r = ids
-			} else {
-				r = intersection(r, ids)
-			}
-		} else {
-			return nil
-		}
-	}
-	return r
-}
-
 func main() {
 	tokenized_corpus := make([][]string, 0)
 	for _, text := range corpus {
 		tokenized_corpus = append(tokenized_corpus, tokenize(text))
 	}
 
-	index := buildIndex(tokenized_corpus)
-	matching_ids := search("lorem", index)
+	index := make(hashmapIndex)
+	for i, tokens := range tokenized_corpus {
+		index.Add(tokens, i)
+	}
+	matching_ids := index.Search("ut")
 	for _, id := range matching_ids {
 		fmt.Println(corpus[id])
 	}
