@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 var corpus = []string{
@@ -25,49 +27,32 @@ type MutableTextIndex interface {
 	Add(tokens []string, id int)
 }
 
-type hashmapIndex map[string][]int
+type hashmapIndex map[string]*roaring.Bitmap
 
-func (index hashmapIndex) Search(query string, tokenizer func(string) []string) []int {
-	var r []int
+func (index hashmapIndex) Search(query string, tokenizer func(string) []string) []uint32 {
+	var r *roaring.Bitmap
 	for _, token := range tokenizer(query) {
-		if ids, ok := index[token]; ok {
+		if bitmap, ok := index[token]; ok {
 			if r == nil {
-				r = ids
+				r = bitmap
 			} else {
-				r = intersection(r, ids)
+				r.And(bitmap)
 			}
 		} else {
 			return nil
 		}
 	}
-	return r
+	return r.ToArray()
 }
 
 func (index hashmapIndex) Add(tokens []string, id int) {
 	for _, token := range tokens {
-		index[token] = append(index[token], id)
-	}
-}
-
-func intersection(a []int, b []int) []int {
-	maxLen := len(a)
-	if len(b) > maxLen {
-		maxLen = len(b)
-	}
-	r := make([]int, 0, maxLen)
-	var i, j int
-	for i < len(a) && j < len(b) {
-		if a[i] < b[j] {
-			i++
-		} else if a[i] > b[j] {
-			j++
-		} else {
-			r = append(r, a[i])
-			i++
-			j++
+		bitmap := index[token]
+		if bitmap == nil {
+			index[token] = roaring.New()
 		}
+		index[token].Add(uint32(id))
 	}
-	return r
 }
 
 func main() {
