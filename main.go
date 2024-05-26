@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"os"
 	"sort"
 	"strings"
 	"unicode"
@@ -47,20 +49,37 @@ func (index hashmapIndex) Search(query string, tokenizer func(string) []string) 
 	return r.ToArray()
 }
 
+func computeNorm(termFreqs map[string]float64) float64 {
+	var norm float64
+	for token, queryCount := range termFreqs {
+		termFreqs[token] = queryCount
+		norm += queryCount * queryCount
+	}
+	return norm
+}
+
 func Rank(query string, docIds []uint32) []uint32 {
 	query_tokens := tokenize(query)
 	termFreqs := getTermFrequency(query_tokens)
 	scores := make([]float64, len(docIds))
+	queryNorm := computeNorm(termFreqs)
 
-	var doc string
 	var refCount float64
 	for i, id := range docIds {
-		doc = corpus[id]
-		docTermFreqs := getTermFrequency(tokenize(doc))
+		docTermFreqs := getTermFrequency(tokenize(corpus[id]))
+		norm := computeNorm(docTermFreqs)
 		for token, value := range termFreqs {
 			refCount = docTermFreqs[token]
 			scores[i] += value * refCount
 		}
+
+		invNorm := 1 / math.Sqrt(queryNorm*norm+1e-8)
+		scores[i] = math.Sqrt(scores[i] * invNorm)
+	}
+
+	// XXX
+	for i, id := range docIds {
+		fmt.Printf("%.2f -> %s\n", scores[i], corpus[id])
 	}
 
 	sort.Slice(docIds, func(i, j int) bool {
@@ -102,8 +121,10 @@ func main() {
 	for i, tokens := range tokenized_corpus {
 		index.Add(tokens, i)
 	}
-	matching_ids := index.Search("ut", tokenize)
-	matching_ids = Rank("ut", matching_ids)
+
+	query := os.Args[1]
+	matching_ids := index.Search(query, tokenize)
+	matching_ids = Rank(query, matching_ids)
 	for _, id := range matching_ids {
 		fmt.Println(corpus[id])
 	}
