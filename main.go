@@ -31,12 +31,22 @@ type MutableTextIndex interface {
 	Add(tokens []string, id int)
 }
 
-type hashmapIndex map[string]*roaring.Bitmap
+type hashmapIndex struct {
+	invIndex      map[string]*roaring.Bitmap
+	wordFreqIndex map[int]map[string]float64
+}
+
+func NewHashmapIndex() hashmapIndex {
+	return hashmapIndex{
+		invIndex:      make(map[string]*roaring.Bitmap),
+		wordFreqIndex: make(map[int]map[string]float64),
+	}
+}
 
 func (index hashmapIndex) Search(query string, tokenizer func(string) []string) []uint32 {
 	var r *roaring.Bitmap
 	for _, token := range tokenizer(query) {
-		if bitmap, ok := index[token]; ok {
+		if bitmap, ok := index.invIndex[token]; ok {
 			if r == nil {
 				r = bitmap
 			} else {
@@ -103,12 +113,13 @@ func getTermFrequency(tokens []string) map[string]float64 {
 
 func (index hashmapIndex) Add(tokens []string, id int) {
 	for _, token := range tokens {
-		bitmap := index[token]
+		bitmap := index.invIndex[token]
 		if bitmap == nil {
-			index[token] = roaring.New()
+			index.invIndex[token] = roaring.New()
 		}
-		index[token].Add(uint32(id))
+		index.invIndex[token].Add(uint32(id))
 	}
+	index.wordFreqIndex[id] = getTermFrequency(tokens)
 }
 
 func main() {
@@ -117,7 +128,7 @@ func main() {
 		tokenized_corpus = append(tokenized_corpus, tokenize(text))
 	}
 
-	index := make(hashmapIndex)
+	index := NewHashmapIndex()
 	for i, tokens := range tokenized_corpus {
 		index.Add(tokens, i)
 	}
