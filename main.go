@@ -34,6 +34,7 @@ type MutableTextIndex interface {
 
 type hashmapIndex struct {
 	invIndex         map[string]*roaring.Bitmap
+	docCount         map[string]uint32
 	wordFreqArray    []map[string]float64
 	squaredNormArray []float64
 }
@@ -41,6 +42,7 @@ type hashmapIndex struct {
 func NewHashmapIndex() MutableTextIndex {
 	return &hashmapIndex{
 		invIndex:         make(map[string]*roaring.Bitmap),
+		docCount:         make(map[string]uint32),
 		wordFreqArray:    make([]map[string]float64, 0),
 		squaredNormArray: make([]float64, 0),
 	}
@@ -125,6 +127,9 @@ func (index *hashmapIndex) Add(tokens []string, id uint32) {
 	}
 
 	termFreqs := getTermFrequency(tokens)
+	for token := range termFreqs {
+		index.docCount[token]++
+	}
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
 	index.squaredNormArray = append(index.squaredNormArray, computeNorm(termFreqs))
 }
