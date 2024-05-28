@@ -29,7 +29,7 @@ func tokenize(text string) []string {
 type MutableTextIndex interface {
 	Search(query string, tokenizer func(string) []string) []uint32
 	Add(tokens []string, id uint32)
-	Rank(query string, docIds []uint32) []uint32
+	Rank(query string, docIds []uint32, tokenizer func(string) []string) []uint32
 }
 
 type hashmapIndex struct {
@@ -72,8 +72,8 @@ func computeNorm(termFreqs map[string]float64) float64 {
 	return norm
 }
 
-func (index *hashmapIndex) Rank(query string, docIds []uint32) []uint32 {
-	query_tokens := tokenize(query)
+func (index *hashmapIndex) Rank(query string, docIds []uint32, tokenizer func(string) []string) []uint32 {
+	query_tokens := tokenizer(query)
 	termFreqs := getTermFrequency(query_tokens)
 	scores := make([]float64, len(docIds))
 	queryNorm := computeNorm(termFreqs)
@@ -143,7 +143,7 @@ func main() {
 
 	query := os.Args[1]
 	matching_ids := index.Search(query, tokenize)
-	matching_ids = index.Rank(query, matching_ids)
+	matching_ids = index.Rank(query, matching_ids, tokenize)
 	for _, id := range matching_ids {
 		fmt.Println(corpus[id])
 	}
