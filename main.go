@@ -49,7 +49,6 @@ func NewHashmapIndex() MutableTextIndex {
 func (index *hashmapIndex) Search(query string, tokenizer func(string) []string) []uint32 {
 	var r *roaring.Bitmap
 	for _, token := range tokenizer(query) {
-		fmt.Println(token)
 		if bitmap, ok := index.invIndex[token]; ok {
 			if r == nil {
 				r = bitmap
