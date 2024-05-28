@@ -27,25 +27,29 @@ func tokenize(text string) []string {
 }
 
 type MutableTextIndex interface {
-	Search(query string, tokenizer func(string) []string) []int
-	Add(tokens []string, id int)
+	Search(query string, tokenizer func(string) []string) []uint32
+	Add(tokens []string, id uint32)
+	Rank(query string, docIds []uint32) []uint32
 }
 
 type hashmapIndex struct {
-	invIndex      map[string]*roaring.Bitmap
-	wordFreqIndex map[int]map[string]float64
+	invIndex         map[string]*roaring.Bitmap
+	wordFreqArray    []map[string]float64
+	squaredNormArray []float64
 }
 
-func NewHashmapIndex() hashmapIndex {
-	return hashmapIndex{
-		invIndex:      make(map[string]*roaring.Bitmap),
-		wordFreqIndex: make(map[int]map[string]float64),
+func NewHashmapIndex() MutableTextIndex {
+	return &hashmapIndex{
+		invIndex:         make(map[string]*roaring.Bitmap),
+		wordFreqArray:    make([]map[string]float64, 0),
+		squaredNormArray: make([]float64, 0),
 	}
 }
 
-func (index hashmapIndex) Search(query string, tokenizer func(string) []string) []uint32 {
+func (index *hashmapIndex) Search(query string, tokenizer func(string) []string) []uint32 {
 	var r *roaring.Bitmap
 	for _, token := range tokenizer(query) {
+		fmt.Println(token)
 		if bitmap, ok := index.invIndex[token]; ok {
 			if r == nil {
 				r = bitmap
@@ -68,22 +72,23 @@ func computeNorm(termFreqs map[string]float64) float64 {
 	return norm
 }
 
-func Rank(query string, docIds []uint32) []uint32 {
+func (index *hashmapIndex) Rank(query string, docIds []uint32) []uint32 {
 	query_tokens := tokenize(query)
 	termFreqs := getTermFrequency(query_tokens)
 	scores := make([]float64, len(docIds))
 	queryNorm := computeNorm(termFreqs)
 
-	var refCount float64
+	var refCount, norm, invNorm float64
+	var docTermFreqs map[string]float64
 	for i, id := range docIds {
-		docTermFreqs := getTermFrequency(tokenize(corpus[id]))
-		norm := computeNorm(docTermFreqs)
+		docTermFreqs = index.wordFreqArray[id]
+		norm = index.squaredNormArray[id]
 		for token, value := range termFreqs {
 			refCount = docTermFreqs[token]
 			scores[i] += value * refCount
 		}
 
-		invNorm := 1 / math.Sqrt(queryNorm*norm+1e-8)
+		invNorm = 1 / math.Sqrt(queryNorm*norm+1e-8)
 		scores[i] = math.Sqrt(scores[i] * invNorm)
 	}
 
@@ -111,15 +116,18 @@ func getTermFrequency(tokens []string) map[string]float64 {
 	return termFreqs
 }
 
-func (index hashmapIndex) Add(tokens []string, id int) {
+func (index *hashmapIndex) Add(tokens []string, id uint32) {
 	for _, token := range tokens {
 		bitmap := index.invIndex[token]
 		if bitmap == nil {
 			index.invIndex[token] = roaring.New()
 		}
-		index.invIndex[token].Add(uint32(id))
+		index.invIndex[token].Add(id)
 	}
-	index.wordFreqIndex[id] = getTermFrequency(tokens)
+
+	termFreqs := getTermFrequency(tokens)
+	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
+	index.squaredNormArray = append(index.squaredNormArray, computeNorm(termFreqs))
 }
 
 func main() {
@@ -130,12 +138,12 @@ func main() {
 
 	index := NewHashmapIndex()
 	for i, tokens := range tokenized_corpus {
-		index.Add(tokens, i)
+		index.Add(tokens, uint32(i))
 	}
 
 	query := os.Args[1]
 	matching_ids := index.Search(query, tokenize)
-	matching_ids = Rank(query, matching_ids)
+	matching_ids = index.Rank(query, matching_ids)
 	for _, id := range matching_ids {
 		fmt.Println(corpus[id])
 	}
