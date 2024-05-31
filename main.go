@@ -45,7 +45,9 @@ type hashmapIndexBuilder struct {
 type hashmapSearchIndex struct {
 	invIndex   map[string]*roaring.Bitmap
 	idf        map[string]float64
-	tfIdfIndex []map[string]float64
+	tfIdfArray []map[string]float64
+	normArray  []float64
+	defaultIdf float64
 }
 
 func NewHashmapIndex() IndexBuilder {
@@ -72,10 +74,9 @@ func (index *hashmapSearchIndex) Search(query string, tokenizer func(string) []s
 	return r.ToArray()
 }
 
-func computeNorm(termFreqs map[string]float64) float64 {
+func computeNorm(tfIdf map[string]float64) float64 {
 	var norm float64
-	for token, queryCount := range termFreqs {
-		termFreqs[token] = queryCount
+	for _, queryCount := range tfIdf {
 		norm += queryCount * queryCount
 	}
 	return norm
@@ -85,20 +86,24 @@ func (index *hashmapSearchIndex) Rank(query string, docIds []uint32, tokenizer f
 	query_tokens := tokenizer(query)
 	termFreqs := getTermFrequency(query_tokens)
 	scores := make([]float64, len(docIds))
-	queryNorm := computeNorm(termFreqs)
 
-	var refCount, norm, invNorm float64
+	var refCount, norm, invNorm, queryNorm float64
 	var docTermFreqs map[string]float64
 	for i, id := range docIds {
-		docTermFreqs = index.tfIdfIndex[id]
+		docTermFreqs = index.tfIdfArray[id]
 		norm = computeNorm(docTermFreqs) // XXX
 		for token, value := range termFreqs {
+			tokenIdf, ok := index.idf[token]
+			if !ok {
+				tokenIdf = index.defaultIdf
+			}
 			refCount = docTermFreqs[token]
-			scores[i] += value * refCount
+			scores[i] += value * refCount * tokenIdf
+			queryNorm += value * value * tokenIdf * tokenIdf
 		}
 
 		invNorm = 1 / math.Sqrt(queryNorm*norm+1e-8)
-		scores[i] = math.Sqrt(scores[i] * invNorm)
+		scores[i] = scores[i] * invNorm
 	}
 
 	// XXX
@@ -149,10 +154,23 @@ func (index *hashmapIndexBuilder) Build() SearchIndex {
 		idf[token] = math.Log(float64(nDocs) / float64(count))
 	}
 
+	tfIdfArray := make([]map[string]float64, len(index.wordFreqArray))
+	for i, wordFreq := range index.wordFreqArray {
+		for token, freq := range wordFreq {
+			tokenIdf, ok := idf[token]
+			if !ok {
+				panic("oh no") // XXX
+			}
+			wordFreq[token] = freq * tokenIdf * tokenIdf
+		}
+		tfIdfArray[i] = wordFreq
+	}
+
 	return &hashmapSearchIndex{
 		invIndex:   index.invIndex,
 		idf:        idf,
-		tfIdfIndex: index.wordFreqArray,
+		tfIdfArray: index.wordFreqArray,
+		defaultIdf: math.Log(1 / float64(nDocs+1)),
 	}
 }
 
