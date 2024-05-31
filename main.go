@@ -37,25 +37,22 @@ type SearchIndex interface {
 }
 
 type hashmapIndexBuilder struct {
-	invIndex         map[string]*roaring.Bitmap
-	docCount         map[string]uint32
-	wordFreqArray    []map[string]float64
-	squaredNormArray []float64
+	invIndex      map[string]*roaring.Bitmap
+	docCount      map[string]uint32
+	wordFreqArray []map[string]float64
 }
 
 type hashmapSearchIndex struct {
-	invIndex         map[string]*roaring.Bitmap
-	idf              map[string]float64
-	wordFreqArray    []map[string]float64
-	squaredNormArray []float64
+	invIndex   map[string]*roaring.Bitmap
+	idf        map[string]float64
+	tfIdfIndex []map[string]float64
 }
 
 func NewHashmapIndex() IndexBuilder {
 	return &hashmapIndexBuilder{
-		invIndex:         make(map[string]*roaring.Bitmap),
-		docCount:         make(map[string]uint32),
-		wordFreqArray:    make([]map[string]float64, 0),
-		squaredNormArray: make([]float64, 0),
+		invIndex:      make(map[string]*roaring.Bitmap),
+		docCount:      make(map[string]uint32),
+		wordFreqArray: make([]map[string]float64, 0),
 	}
 }
 
@@ -93,8 +90,8 @@ func (index *hashmapSearchIndex) Rank(query string, docIds []uint32, tokenizer f
 	var refCount, norm, invNorm float64
 	var docTermFreqs map[string]float64
 	for i, id := range docIds {
-		docTermFreqs = index.wordFreqArray[id]
-		norm = index.squaredNormArray[id]
+		docTermFreqs = index.tfIdfIndex[id]
+		norm = computeNorm(docTermFreqs) // XXX
 		for token, value := range termFreqs {
 			refCount = docTermFreqs[token]
 			scores[i] += value * refCount
@@ -142,7 +139,6 @@ func (index *hashmapIndexBuilder) Add(tokens []string, id uint32) {
 		index.docCount[token]++
 	}
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
-	index.squaredNormArray = append(index.squaredNormArray, computeNorm(termFreqs))
 }
 
 func (index *hashmapIndexBuilder) Build() SearchIndex {
@@ -154,10 +150,9 @@ func (index *hashmapIndexBuilder) Build() SearchIndex {
 	}
 
 	return &hashmapSearchIndex{
-		invIndex:         index.invIndex,
-		idf:              idf,
-		wordFreqArray:    index.wordFreqArray,
-		squaredNormArray: index.squaredNormArray,
+		invIndex:   index.invIndex,
+		idf:        idf,
+		tfIdfIndex: index.wordFreqArray,
 	}
 }
 
