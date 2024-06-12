@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -72,33 +73,67 @@ func TestPatriciaTrieSearch(t *testing.T) {
 	}
 }
 
-// func TestPatriciaTriePrefix(t *testing.T) {
-// 	trie := NewPatriciaTrie()
-// 	tests := []prefixTest{
-// 		{word: "ca", prefix: false, insert: false, set: roaring.BitmapOf(1)},
-// 		{word: "c", prefix: false, insert: false, set: roaring.BitmapOf(2)},
-// 		{word: "cat", prefix: false, insert: true, set: roaring.BitmapOf(3)},
-// 		{word: "can", prefix: false, insert: true, set: roaring.BitmapOf(4)},
-// 		{word: "ca", prefix: true, insert: false, set: roaring.BitmapOf(5), prefixSet: roaring.BitmapOf(4)},
-// 		{word: "the", prefix: false, insert: true, set: roaring.BitmapOf(6)},
-// 		{word: "then", prefix: false, insert: true, set: roaring.BitmapOf(7)},
-// 		{word: "the", prefix: true, insert: true, set: roaring.BitmapOf(8), prefixSet: roaring.BitmapOf(7)},
-// 		{word: "the", prefix: true, insert: true, set: roaring.BitmapOf(9), prefixSet: roaring.BitmapOf(7)},
-// 	}
-//
-// 	var result *roaring.Bitmap
-// 	for _, prefixTest := range tests {
-// 		result = trie.StartsWith(prefixTest.word)
-// 		if (result == nil || !prefixTest.prefix) && (result != nil || prefixTest.prefix) {
-// 			t.Errorf(
-// 				"trie prefix search failed for word %s. Expected %v got %v",
-// 				prefixTest.word,
-// 				prefixTest.prefix,
-// 				result,
-// 			)
-// 		}
-// 		if prefixTest.insert {
-// 			trie.Insert(prefixTest.word, prefixTest.set)
-// 		}
-// 	}
-// }
+func TestPatriciaTriePrefix(t *testing.T) {
+	trie := NewPatriciaTrie()
+	tests := []prefixTest{
+		{
+			word: "ca", prefix: false, insert: false,
+			set: roaring.BitmapOf(1),
+		},
+		{
+			word: "c", prefix: false, insert: false,
+			set: roaring.BitmapOf(2),
+		},
+		{
+			word: "cat", prefix: false, insert: false,
+			set: roaring.BitmapOf(3),
+		},
+		{
+			word: "can", prefix: false, insert: true,
+			set: roaring.BitmapOf(4),
+		},
+		{
+			word: "ca", prefix: true, insert: false,
+			set: roaring.BitmapOf(5), prefixSet: roaring.BitmapOf(4),
+		},
+		{
+			word: "the", prefix: false, insert: true,
+			set: roaring.BitmapOf(6),
+		},
+		{
+			word: "then", prefix: false, insert: true,
+			set: roaring.BitmapOf(7),
+		},
+		{
+			word: "the", prefix: true, insert: true,
+			set: roaring.BitmapOf(8), prefixSet: roaring.BitmapOf(6, 7),
+		},
+		{
+			word: "the", prefix: true, insert: true,
+			set: roaring.BitmapOf(8), prefixSet: roaring.BitmapOf(6, 7),
+		},
+	}
+
+	var result *roaring.Bitmap
+	for _, prefixTest := range tests {
+		result = trie.StartsWith(prefixTest.word)
+		if (result == nil || !prefixTest.prefix) && (result != nil || prefixTest.prefix) {
+			t.Errorf(
+				"trie prefix search failed for word %s. Expected %v got %v",
+				prefixTest.word,
+				prefixTest.prefix,
+				result,
+			)
+		}
+
+		if prefixTest.prefixSet != nil && !prefixTest.prefixSet.Equals(result) {
+			fmt.Println(prefixTest.prefixSet.String())
+			fmt.Println(result.String())
+			t.Errorf("wrong bitset returned for word %s", prefixTest.word)
+		}
+
+		if prefixTest.insert {
+			trie.Insert(prefixTest.word, prefixTest.set)
+		}
+	}
+}

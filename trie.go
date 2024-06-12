@@ -182,11 +182,24 @@ func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
 	return nil
 }
 
+func mergeChildren(n *node, set *roaring.Bitmap) *roaring.Bitmap {
+	if n.isLeaf() {
+		return n.value
+	}
+
+	var otherSet *roaring.Bitmap
+	for _, child := range n.children {
+		otherSet = mergeChildren(child, set)
+		set.Or(otherSet)
+	}
+	return set
+}
+
 // FIXME traverse children
 func (t *PatriciaTrie) StartsWith(key string) *roaring.Bitmap {
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
-		return n.value
+		return mergeChildren(n, roaring.New())
 	}
 	return nil
 }
