@@ -173,13 +173,20 @@ func (t *PatriciaTrie) insertNode(n *node, key string, set *roaring.Bitmap, elem
 	n.children = append(n.children, newNode)
 }
 
-func (t *PatriciaTrie) Search(key string) bool {
+func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
 	key += string('\x00')
-	_, elementsFound, _ := t.search(key)
-	return elementsFound == len(key)
+	n, elementsFound, _ := t.search(key)
+	if elementsFound == len(key) {
+		return n.value
+	}
+	return nil
 }
 
-func (t *PatriciaTrie) StartsWith(key string) bool {
-	_, elementsFound, _ := t.search(key)
-	return elementsFound == len(key)
+// FIXME traverse children
+func (t *PatriciaTrie) StartsWith(key string) *roaring.Bitmap {
+	n, elementsFound, _ := t.search(key)
+	if elementsFound == len(key) {
+		return n.value
+	}
+	return nil
 }
