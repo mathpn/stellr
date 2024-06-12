@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 type node struct {
 	parent   *edge
+	value    *roaring.Bitmap
 	children []*node
 }
 
@@ -122,7 +125,7 @@ func (t *PatriciaTrie) search(key string) (*node, int, int) {
 	return currentNode, elementsFound, 0
 }
 
-func (t *PatriciaTrie) Insert(key string) {
+func (t *PatriciaTrie) Insert(key string, set *roaring.Bitmap) {
 	key += string('\x00')
 	lenKey := len(key)
 
@@ -136,20 +139,20 @@ func (t *PatriciaTrie) Insert(key string) {
 	}
 
 	if elementsFound == 0 {
-		t.insertRootChild(currentNode, key)
+		t.insertRootChild(currentNode, key, set)
 	} else {
-		t.insertNode(currentNode, key, elementsFound, overlap)
+		t.insertNode(currentNode, key, set, elementsFound, overlap)
 	}
 }
 
-func (t *PatriciaTrie) insertRootChild(n *node, key string) {
+func (t *PatriciaTrie) insertRootChild(n *node, key string, set *roaring.Bitmap) {
 	t.strings = append(t.strings, key)
 	edge := &edge{id: len(t.strings) - 1, len: len(key)}
-	childNode := &node{parent: edge}
+	childNode := &node{parent: edge, value: set}
 	n.children = append(n.children, childNode)
 }
 
-func (t *PatriciaTrie) insertNode(n *node, key string, elementsFound int, overlap int) {
+func (t *PatriciaTrie) insertNode(n *node, key string, set *roaring.Bitmap, elementsFound int, overlap int) {
 	idx := n.parent.id
 	lenKey := len(key)
 
@@ -157,14 +160,16 @@ func (t *PatriciaTrie) insertNode(n *node, key string, elementsFound int, overla
 		splitEdge := &edge{id: idx, len: n.parent.len - overlap}
 		splitNode := &node{parent: splitEdge}
 		splitNode.children = n.children
+		splitNode.value = n.value
 		n.children = []*node{splitNode}
+		n.value = nil
 		n.parent.len = overlap
 	}
 
 	t.strings = append(t.strings, key)
 	idx = len(t.strings) - 1
 	newEdge := &edge{id: idx, len: lenKey - elementsFound}
-	newNode := &node{parent: newEdge}
+	newNode := &node{parent: newEdge, value: set}
 	n.children = append(n.children, newNode)
 }
 
