@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring"
@@ -43,7 +42,7 @@ func TestPatriciaTrieSearch(t *testing.T) {
 		{"oregon", *roaring.BitmapOf(18)},
 		{"or", *roaring.BitmapOf(19)},
 	}
-	var found *roaring.Bitmap
+	var found interface{}
 	for _, insert := range inserts {
 		found = trie.Search(insert.word)
 		if found != nil {
@@ -55,6 +54,7 @@ func TestPatriciaTrieSearch(t *testing.T) {
 		if found == nil {
 			t.Errorf("word %s should be found in trie", insert.word)
 		}
+		found = found.(*roaring.Bitmap)
 		if !insert.set.Equals(found) {
 			t.Errorf("wrong bitset returned for word %s", insert.word)
 		}
@@ -65,6 +65,7 @@ func TestPatriciaTrieSearch(t *testing.T) {
 		if found == nil {
 			t.Errorf("word %s should be found in trie", insert.word)
 		}
+		found = found.(*roaring.Bitmap)
 		trie.Insert(insert.word, &insert.set)
 
 		if !insert.set.Equals(found) {
@@ -114,7 +115,7 @@ func TestPatriciaTriePrefix(t *testing.T) {
 		},
 	}
 
-	var result *roaring.Bitmap
+	var result interface{}
 	for _, prefixTest := range tests {
 		result = trie.StartsWith(prefixTest.word)
 		if (result == nil || !prefixTest.prefix) && (result != nil || prefixTest.prefix) {
@@ -126,10 +127,11 @@ func TestPatriciaTriePrefix(t *testing.T) {
 			)
 		}
 
-		if prefixTest.prefixSet != nil && !prefixTest.prefixSet.Equals(result) {
-			fmt.Println(prefixTest.prefixSet.String())
-			fmt.Println(result.String())
-			t.Errorf("wrong bitset returned for word %s", prefixTest.word)
+		if prefixTest.prefixSet != nil {
+			result = result.(*roaring.Bitmap)
+			if !prefixTest.prefixSet.Equals(result) {
+				t.Errorf("wrong bitset returned for word %s", prefixTest.word)
+			}
 		}
 
 		if prefixTest.insert {

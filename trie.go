@@ -9,7 +9,7 @@ import (
 
 type node struct {
 	parent   *edge
-	value    *roaring.Bitmap
+	value    interface{}
 	children []*node
 }
 
@@ -173,7 +173,7 @@ func (t *PatriciaTrie) insertNode(n *node, key string, set *roaring.Bitmap, elem
 	n.children = append(n.children, newNode)
 }
 
-func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
+func (t *PatriciaTrie) Search(key string) interface{} {
 	key += string('\x00')
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
@@ -182,21 +182,20 @@ func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
 	return nil
 }
 
-func mergeChildren(n *node, set *roaring.Bitmap) *roaring.Bitmap {
+func mergeChildren(n *node, set *roaring.Bitmap) interface{} {
 	if n.isLeaf() {
 		return n.value
 	}
 
 	var otherSet *roaring.Bitmap
 	for _, child := range n.children {
-		otherSet = mergeChildren(child, set)
+		otherSet = mergeChildren(child, set).(*roaring.Bitmap)
 		set.Or(otherSet)
 	}
 	return set
 }
 
-// FIXME traverse children
-func (t *PatriciaTrie) StartsWith(key string) *roaring.Bitmap {
+func (t *PatriciaTrie) StartsWith(key string) interface{} {
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
 		return mergeChildren(n, roaring.New())
