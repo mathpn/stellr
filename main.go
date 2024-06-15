@@ -42,6 +42,12 @@ type hashmapIndexBuilder struct {
 	wordFreqArray []map[string]float64
 }
 
+type trieIndexBuilder struct {
+	invIndex      *PatriciaTrie
+	docCount      map[string]uint32
+	wordFreqArray []map[string]float64
+}
+
 type hashmapSearchIndex struct {
 	invIndex   map[string]*roaring.Bitmap
 	idf        map[string]float64
@@ -50,9 +56,35 @@ type hashmapSearchIndex struct {
 	defaultIdf float64
 }
 
+type trieSearchIndex struct {
+	invIndex   *PatriciaTrie
+	idf        map[string]float64
+	tfIdfArray []map[string]float64
+	normArray  []float64
+	defaultIdf float64
+}
+
+// Rank implements SearchIndex.
+func (t *trieSearchIndex) Rank(query string, docIds []uint32, tokenizer func(string) []string) []uint32 {
+	panic("unimplemented")
+}
+
+// Search implements SearchIndex.
+func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) []uint32 {
+	panic("unimplemented")
+}
+
 func NewHashmapIndex() IndexBuilder {
 	return &hashmapIndexBuilder{
 		invIndex:      make(map[string]*roaring.Bitmap),
+		docCount:      make(map[string]uint32),
+		wordFreqArray: make([]map[string]float64, 0),
+	}
+}
+
+func NewTrieIndex() IndexBuilder {
+	return &trieIndexBuilder{
+		invIndex:      NewPatriciaTrie(),
 		docCount:      make(map[string]uint32),
 		wordFreqArray: make([]map[string]float64, 0),
 	}
@@ -146,6 +178,25 @@ func (index *hashmapIndexBuilder) Add(tokens []string, id uint32) {
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
 }
 
+func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
+	var bitmap *roaring.Bitmap
+	for _, token := range tokens {
+		value := index.invIndex.Search(token)
+		if value == nil {
+			value = roaring.New()
+		}
+		bitmap = value.(*roaring.Bitmap)
+		bitmap.Add(id)
+		index.invIndex.Insert(token, bitmap) // XXX replace if exists
+	}
+
+	termFreqs := getTermFrequency(tokens)
+	for token := range termFreqs {
+		index.docCount[token]++
+	}
+	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
+}
+
 func (index *hashmapIndexBuilder) Build() SearchIndex {
 	idf := make(map[string]float64, 0)
 	nDocs := len(index.wordFreqArray)
@@ -174,13 +225,42 @@ func (index *hashmapIndexBuilder) Build() SearchIndex {
 	}
 }
 
+func (index *trieIndexBuilder) Build() SearchIndex {
+	idf := make(map[string]float64, 0)
+	nDocs := len(index.wordFreqArray)
+
+	for token, count := range index.docCount {
+		idf[token] = math.Log(float64(nDocs) / float64(count))
+	}
+
+	tfIdfArray := make([]map[string]float64, len(index.wordFreqArray))
+	for i, wordFreq := range index.wordFreqArray {
+		for token, freq := range wordFreq {
+			tokenIdf, ok := idf[token]
+			if !ok {
+				panic("oh no") // XXX
+			}
+			wordFreq[token] = freq * tokenIdf * tokenIdf
+		}
+		tfIdfArray[i] = wordFreq
+	}
+
+	return &trieSearchIndex{
+		invIndex:   index.invIndex,
+		idf:        idf,
+		tfIdfArray: index.wordFreqArray,
+		defaultIdf: math.Log(1 / float64(nDocs+1)),
+	}
+}
+
 func main() {
 	tokenized_corpus := make([][]string, 0)
 	for _, text := range corpus {
 		tokenized_corpus = append(tokenized_corpus, tokenize(text))
 	}
 
-	indexBuilder := NewHashmapIndex()
+	// indexBuilder := NewHashmapIndex()
+	indexBuilder := NewTrieIndex()
 	for i, tokens := range tokenized_corpus {
 		indexBuilder.Add(tokens, uint32(i))
 	}
