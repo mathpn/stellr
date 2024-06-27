@@ -9,7 +9,7 @@ import (
 
 type node struct {
 	parent   *edge
-	value    interface{}
+	value    *roaring.Bitmap
 	children []*node
 }
 
@@ -135,6 +135,7 @@ func (t *PatriciaTrie) Insert(key string, set *roaring.Bitmap) {
 	}
 
 	if elementsFound == lenKey {
+		currentNode.value.Or(set)
 		return
 	}
 
@@ -173,7 +174,7 @@ func (t *PatriciaTrie) insertNode(n *node, key string, set *roaring.Bitmap, elem
 	n.children = append(n.children, newNode)
 }
 
-func (t *PatriciaTrie) Search(key string) interface{} {
+func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
 	key += string('\x00')
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
@@ -182,20 +183,20 @@ func (t *PatriciaTrie) Search(key string) interface{} {
 	return nil
 }
 
-func mergeChildren(n *node, set *roaring.Bitmap) interface{} {
+func mergeChildren(n *node, set *roaring.Bitmap) *roaring.Bitmap {
 	if n.isLeaf() {
 		return n.value
 	}
 
 	var otherSet *roaring.Bitmap
 	for _, child := range n.children {
-		otherSet = mergeChildren(child, set).(*roaring.Bitmap)
+		otherSet = mergeChildren(child, set)
 		set.Or(otherSet)
 	}
 	return set
 }
 
-func (t *PatriciaTrie) StartsWith(key string) interface{} {
+func (t *PatriciaTrie) StartsWith(key string) *roaring.Bitmap {
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
 		return mergeChildren(n, roaring.New())
