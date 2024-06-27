@@ -203,3 +203,32 @@ func (t *PatriciaTrie) StartsWith(key string) *roaring.Bitmap {
 	}
 	return nil
 }
+
+type tokenSet struct {
+	set   *roaring.Bitmap
+	token string
+}
+
+func (t *PatriciaTrie) Traversal() []tokenSet {
+	path := []tokenSet{}
+	processNode := func(node *node) {
+		if node.value == nil {
+			return
+		}
+		token := t.strings[node.parent.id]
+		token = token[:len(token)-1]
+		path = append(path, tokenSet{set: node.value, token: token})
+	}
+	walkIn(t.root, processNode)
+	return path
+}
+
+func walkIn(curr *node, processNode func(*node)) {
+	if curr == nil {
+		return
+	}
+	processNode(curr)
+	for _, n := range curr.children {
+		walkIn(n, processNode)
+	}
+}
