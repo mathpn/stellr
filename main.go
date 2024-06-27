@@ -43,7 +43,6 @@ type hashmapIndexBuilder struct {
 
 type trieIndexBuilder struct {
 	invIndex      *PatriciaTrie
-	docCount      map[string]uint32 // TODO remove
 	wordFreqArray []map[string]float64
 }
 
@@ -103,8 +102,7 @@ func (t *trieSearchIndex) Rank(query string, docIds []uint32, tokenizer func(str
 func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) []uint32 {
 	var r, set *roaring.Bitmap
 	for _, token := range tokenizer(query) {
-		if value := t.invIndex.Search(token); value != nil {
-			set = value.(*roaring.Bitmap)
+		if set = t.invIndex.Search(token); set != nil {
 			if r == nil {
 				r = set
 			} else {
@@ -127,7 +125,6 @@ func NewHashmapIndex() IndexBuilder {
 func NewTrieIndex() IndexBuilder {
 	return &trieIndexBuilder{
 		invIndex:      NewPatriciaTrie(),
-		docCount:      make(map[string]uint32),
 		wordFreqArray: make([]map[string]float64, 0),
 	}
 }
@@ -220,11 +217,10 @@ func (index *hashmapIndexBuilder) Add(tokens []string, id uint32) {
 func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 	var bitmap *roaring.Bitmap
 	for _, token := range tokens {
-		value := index.invIndex.Search(token)
-		if value == nil {
-			value = roaring.New()
+		bitmap = index.invIndex.Search(token)
+		if bitmap == nil {
+			bitmap = roaring.New()
 		}
-		bitmap = value.(*roaring.Bitmap)
 		bitmap.Add(id)
 		index.invIndex.Insert(token, bitmap) // XXX replace if exists
 	}
@@ -265,8 +261,11 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 	idf := make(map[string]float64, 0)
 	nDocs := len(index.wordFreqArray)
 
-	for token, count := range index.docCount {
-		idf[token] = math.Log(float64(nDocs) / float64(count))
+	tokenSets := index.invIndex.Traversal()
+	var cardinality uint64
+	for _, tokenSet := range tokenSets {
+		cardinality = tokenSet.set.GetCardinality()
+		idf[tokenSet.token] = math.Log(float64(nDocs) / float64(cardinality))
 	}
 
 	tfIdfArray := make([]map[string]float64, len(index.wordFreqArray))
@@ -295,14 +294,15 @@ func main() {
 		tokenized_corpus = append(tokenized_corpus, tokenize(text))
 	}
 
-	// indexBuilder := NewTrieIndex()
-	indexBuilder := NewHashmapIndex()
+	indexBuilder := NewTrieIndex()
+	// indexBuilder := NewHashmapIndex()
 	for i, tokens := range tokenized_corpus {
 		indexBuilder.Add(tokens, uint32(i))
 	}
 
 	query := os.Args[1]
 	index := indexBuilder.Build()
+
 	matching_ids := index.Search(query, tokenize)
 	matching_ids = index.Rank(query, matching_ids, tokenize)
 	for _, id := range matching_ids {
