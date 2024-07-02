@@ -81,7 +81,7 @@ func (t *PatriciaTrie) findPrefix(n *node, key string, elementsFound int) (*node
 		l = elementsFound + childNode.parent.len
 		edgeLabel := t.strings[childNode.parent.id][elementsFound:l]
 
-		for ; overlap < len(key)-elementsFound; overlap++ {
+		for ; overlap < len(key); overlap++ {
 			if key[overlap] != edgeLabel[overlap] {
 				break
 			}
