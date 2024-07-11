@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"math"
 	"os"
@@ -299,7 +300,34 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 	}
 }
 
+func ReadCorpus(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
+}
+
 func main() {
+	corpusPath := os.Args[1]
+
+	corpus, err := ReadCorpus(corpusPath)
+	if err != nil {
+		panic(err)
+	}
+
 	tokenized_corpus := make([][]string, 0)
 	for _, text := range corpus {
 		tokenized_corpus = append(tokenized_corpus, tokenize(text))
@@ -311,7 +339,7 @@ func main() {
 		indexBuilder.Add(tokens, uint32(i))
 	}
 
-	query := os.Args[1]
+	query := os.Args[2]
 	index := indexBuilder.Build()
 
 	matching_ids := index.Search(query, tokenize)
