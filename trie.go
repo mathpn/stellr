@@ -183,23 +183,30 @@ func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
 	return nil
 }
 
-func mergeChildren(n *node, set *roaring.Bitmap) *roaring.Bitmap {
-	if n.isLeaf() {
-		return n.value
-	}
-
-	var otherSet *roaring.Bitmap
-	for _, child := range n.children {
-		otherSet = mergeChildren(child, set)
-		set.Or(otherSet)
-	}
-	return set
+type IndexResult struct {
+	set    *roaring.Bitmap
+	tokens []string
 }
 
-func (t *PatriciaTrie) StartsWith(key string) *roaring.Bitmap {
+func (t *PatriciaTrie) mergeChildren(n *node, result *IndexResult) *IndexResult {
+	if n.isLeaf() {
+		label := t.strings[n.parent.id]
+		label = label[0 : len(label)-1]
+		result.tokens = append(result.tokens, label)
+		result.set.Or(n.value)
+		return result
+	}
+
+	for _, child := range n.children {
+		result = t.mergeChildren(child, result)
+	}
+	return result
+}
+
+func (t *PatriciaTrie) StartsWith(key string) *IndexResult {
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
-		return mergeChildren(n, roaring.New())
+		return t.mergeChildren(n, &IndexResult{set: roaring.New(), tokens: make([]string, 0)})
 	}
 	return nil
 }

@@ -104,7 +104,7 @@ func TestPatriciaTriePrefix(t *testing.T) {
 		},
 	}
 
-	var result *roaring.Bitmap
+	var result *IndexResult
 	for _, prefixTest := range tests {
 		result = trie.StartsWith(prefixTest.word)
 		if (result == nil || !prefixTest.prefix) && (result != nil || prefixTest.prefix) {
@@ -117,7 +117,7 @@ func TestPatriciaTriePrefix(t *testing.T) {
 		}
 
 		if prefixTest.prefixSet != nil {
-			if !prefixTest.prefixSet.Equals(result) {
+			if !prefixTest.prefixSet.Equals(result.set) {
 				t.Errorf("wrong bitset returned for word %s | %v exp %v", prefixTest.word, result, prefixTest.prefixSet)
 			}
 		}
