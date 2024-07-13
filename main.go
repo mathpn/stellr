@@ -12,14 +12,6 @@ import (
 	"github.com/RoaringBitmap/roaring"
 )
 
-var corpus = []string{
-	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
-	"Orci sagittis eu volutpat odio facilisis mauris sit.",
-	"Duis ut diam quam nulla porttitor massa id neque.",
-	"Cursus vitae congue mauris rhoncus aenean vel elit scelerisque mauris.",
-	"Cursus ut ut ut vitae congue mauris rhoncus aenean vel elit scelerisque mauris.",
-}
-
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
 	return strings.FieldsFunc(text, func(r rune) bool {
@@ -89,9 +81,6 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []uint32 {
 		scores[i] = scores[i] * invNorm
 	}
 
-	// XXX
-	for i, id := range docIds {
-		fmt.Printf("%.2f -> %s\n", scores[i], corpus[id])
 	}
 
 	sort.Slice(docIds, func(i, j int) bool {
@@ -172,9 +161,6 @@ func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []uint32
 		scores[i] = scores[i] * invNorm
 	}
 
-	// XXX
-	for i, id := range docIds {
-		fmt.Printf("%.2f -> %s\n", scores[i], corpus[id])
 	}
 
 	sort.Slice(docIds, func(i, j int) bool {
