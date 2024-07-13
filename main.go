@@ -33,8 +33,8 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, tokenizer func(string) []string) []uint32
-	Rank(query string, docIds []uint32, tokenizer func(string) []string) []uint32
+	Search(query string, tokenizer func(string) []string) *IndexResult
+	Rank(tokens []string, docIds []uint32) []uint32
 }
 
 type hashmapIndexBuilder struct {
@@ -67,9 +67,8 @@ type trieSearchIndex struct {
 }
 
 // Rank implements SearchIndex.
-func (t *trieSearchIndex) Rank(query string, docIds []uint32, tokenizer func(string) []string) []uint32 {
-	query_tokens := tokenizer(query)
-	termFreqs := getTermFrequency(query_tokens)
+func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []uint32 {
+	termFreqs := getTermFrequency(tokens)
 	scores := make([]float64, len(docIds))
 
 	var refCount, invNorm, queryNorm float64
@@ -101,20 +100,15 @@ func (t *trieSearchIndex) Rank(query string, docIds []uint32, tokenizer func(str
 	return docIds
 }
 
-func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) []uint32 {
-	var r, set *roaring.Bitmap
+func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
+	var res *IndexResult
+	r := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
 	for _, token := range tokenizer(query) {
-		if set = t.invIndex.Search(token); set != nil {
-			if r == nil {
-				r = set
-			} else {
-				r.And(set)
-			}
-		} else {
-			return nil
+		if res = t.invIndex.StartsWith(token); res != nil {
+			r.Combine(res)
 		}
 	}
-	return r.ToArray()
+	return r
 }
 
 func NewHashmapIndex() IndexBuilder {
@@ -131,9 +125,10 @@ func NewTrieIndex() IndexBuilder {
 	}
 }
 
-func (index *hashmapSearchIndex) Search(query string, tokenizer func(string) []string) []uint32 {
+func (index *hashmapSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
 	var r *roaring.Bitmap
-	for _, token := range tokenizer(query) {
+	tokens := tokenizer(query)
+	for _, token := range tokens {
 		if bitmap, ok := index.invIndex[token]; ok {
 			if r == nil {
 				r = bitmap
@@ -144,7 +139,7 @@ func (index *hashmapSearchIndex) Search(query string, tokenizer func(string) []s
 			return nil
 		}
 	}
-	return r.ToArray()
+	return &IndexResult{set: r, tokens: tokens}
 }
 
 func computeNorm(tfIdf map[string]float64) float64 {
@@ -155,9 +150,8 @@ func computeNorm(tfIdf map[string]float64) float64 {
 	return norm
 }
 
-func (index *hashmapSearchIndex) Rank(query string, docIds []uint32, tokenizer func(string) []string) []uint32 {
-	query_tokens := tokenizer(query)
-	termFreqs := getTermFrequency(query_tokens)
+func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []uint32 {
+	termFreqs := getTermFrequency(tokens)
 	scores := make([]float64, len(docIds))
 
 	var refCount, invNorm, queryNorm float64
@@ -342,8 +336,8 @@ func main() {
 	query := os.Args[2]
 	index := indexBuilder.Build()
 
-	matching_ids := index.Search(query, tokenize)
-	matching_ids = index.Rank(query, matching_ids, tokenize)
+	searchResult := index.Search(query, tokenize)
+	matching_ids := index.Rank(searchResult.tokens, searchResult.set.ToArray())
 	for _, id := range matching_ids {
 		fmt.Println(corpus[id])
 	}
