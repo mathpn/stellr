@@ -188,6 +188,11 @@ type IndexResult struct {
 	tokens []string
 }
 
+func (r *IndexResult) Combine(res *IndexResult) {
+	r.set.Or(res.set)
+	r.tokens = append(r.tokens, res.tokens...)
+}
+
 func (t *PatriciaTrie) mergeChildren(n *node, result *IndexResult) *IndexResult {
 	if n.isLeaf() {
 		label := t.strings[n.parent.id]
