@@ -26,7 +26,12 @@ type IndexBuilder interface {
 
 type SearchIndex interface {
 	Search(query string, tokenizer func(string) []string) *IndexResult
-	Rank(tokens []string, docIds []uint32) []uint32
+	Rank(tokens []string, docIds []uint32) []RankResult
+}
+
+type RankResult struct {
+	id    uint32
+	score float64
 }
 
 type hashmapIndexBuilder struct {
@@ -58,10 +63,9 @@ type trieSearchIndex struct {
 	defaultIdf float64
 }
 
-// Rank implements SearchIndex.
-func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []uint32 {
+func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	termFreqs := getTermFrequency(tokens)
-	scores := make([]float64, len(docIds))
+	result := make([]RankResult, len(docIds))
 
 	var refCount, invNorm, queryNorm float64
 	var doc *docEntry
@@ -73,20 +77,19 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []uint32 {
 				tokenIdf = t.defaultIdf
 			}
 			refCount = doc.tfIdf[token]
-			scores[i] += value * refCount * tokenIdf
+			result[i].id = id
+			result[i].score += value * refCount * tokenIdf
 			queryNorm += value * value * tokenIdf * tokenIdf
 		}
 
 		invNorm = 1 / math.Sqrt(queryNorm*doc.norm+1e-8)
-		scores[i] = scores[i] * invNorm
+		result[i].score = result[i].score * invNorm
 	}
 
-	}
-
-	sort.Slice(docIds, func(i, j int) bool {
-		return scores[i] > scores[j] // descending order
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].score > result[j].score // descending order
 	})
-	return docIds
+	return result
 }
 
 func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
@@ -139,9 +142,9 @@ func computeNorm(tfIdf map[string]float64) float64 {
 	return norm
 }
 
-func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []uint32 {
+func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	termFreqs := getTermFrequency(tokens)
-	scores := make([]float64, len(docIds))
+	result := make([]RankResult, len(docIds))
 
 	var refCount, invNorm, queryNorm float64
 	var doc *docEntry
@@ -153,20 +156,19 @@ func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []uint32
 				tokenIdf = index.defaultIdf
 			}
 			refCount = doc.tfIdf[token]
-			scores[i] += value * refCount * tokenIdf
+			result[i].id = id
+			result[i].score += value * refCount * tokenIdf
 			queryNorm += value * value * tokenIdf * tokenIdf
 		}
 
 		invNorm = 1 / math.Sqrt(queryNorm*doc.norm+1e-8)
-		scores[i] = scores[i] * invNorm
+		result[i].score = result[i].score * invNorm
 	}
 
-	}
-
-	sort.Slice(docIds, func(i, j int) bool {
-		return scores[i] > scores[j] // descending order
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].score > result[j].score // descending order
 	})
-	return docIds
+	return result
 }
 
 func getTermFrequency(tokens []string) map[string]float64 {
@@ -324,7 +326,7 @@ func main() {
 
 	searchResult := index.Search(query, tokenize)
 	matching_ids := index.Rank(searchResult.tokens, searchResult.set.ToArray())
-	for _, id := range matching_ids {
-		fmt.Println(corpus[id])
+	for _, res := range matching_ids {
+		fmt.Printf("%.2f -> %s\n", res.score, corpus[res.id])
 	}
 }
