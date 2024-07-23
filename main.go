@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -302,31 +303,51 @@ func ReadCorpus(filename string) ([]string, error) {
 	return lines, nil
 }
 
-func main() {
+type App struct {
+	indexBuilder IndexBuilder
+	index        SearchIndex
+	corpus       []string
+}
+
+func (a *App) buildIndex(w http.ResponseWriter, r *http.Request) {
+	// TODO read corpus from request
 	corpusPath := os.Args[1]
 
 	corpus, err := ReadCorpus(corpusPath)
 	if err != nil {
 		panic(err)
 	}
+	a.corpus = corpus // XXX
 
 	tokenized_corpus := make([][]string, 0)
 	for _, text := range corpus {
 		tokenized_corpus = append(tokenized_corpus, tokenize(text))
 	}
 
-	indexBuilder := NewTrieIndex()
-	// indexBuilder := NewHashmapIndex()
+	a.indexBuilder = NewTrieIndex()
 	for i, tokens := range tokenized_corpus {
-		indexBuilder.Add(tokens, uint32(i))
+		a.indexBuilder.Add(tokens, uint32(i))
 	}
 
+	a.index = a.indexBuilder.Build()
+	fmt.Fprint(w, "creating index brrr")
+}
+
+func (a *App) search(w http.ResponseWriter, r *http.Request) {
+	// TODO get query from request
 	query := os.Args[2]
-	index := indexBuilder.Build()
 
-	searchResult := index.Search(query, tokenize)
-	matching_ids := index.Rank(searchResult.tokens, searchResult.set.ToArray())
+	searchResult := a.index.Search(query, tokenize)
+	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
 	for _, res := range matching_ids {
-		fmt.Printf("%.2f -> %s\n", res.score, corpus[res.id])
+		fmt.Printf("%.2f -> %s\n", res.score, a.corpus[res.id])
 	}
+}
+
+func main() {
+	app := &App{corpus: make([]string, 0)}
+
+	http.HandleFunc("/buildIndex", app.buildIndex)
+	http.HandleFunc("/search", app.search)
+	http.ListenAndServe(":8345", nil)
 }
