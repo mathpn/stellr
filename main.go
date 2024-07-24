@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -330,18 +331,31 @@ func (a *App) buildIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.index = a.indexBuilder.Build()
-	fmt.Fprint(w, "creating index brrr")
+	fmt.Fprint(w, "creating index brrr\n")
+}
+
+type searchResponse struct {
+	Text  string
+	Score float64
+	Id    uint32
 }
 
 func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	// TODO get query from request
+	w.Header().Set("Content-Type", "application/json")
 	query := os.Args[2]
 
 	searchResult := a.index.Search(query, tokenize)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
+	result := make([]searchResponse, 0)
+
+	var response searchResponse
 	for _, res := range matching_ids {
-		fmt.Printf("%.2f -> %s\n", res.score, a.corpus[res.id])
+		response = searchResponse{Id: res.id, Score: math.Round(1000 * res.score), Text: a.corpus[res.id]}
+		result = append(result, response)
 	}
+
+	json.NewEncoder(w).Encode(result)
 }
 
 func main() {
