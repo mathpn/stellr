@@ -335,15 +335,19 @@ func (a *App) buildIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 type searchResponse struct {
-	Text  string
-	Score float64
-	Id    uint32
+	Text  string  `json:"text"`
+	Score float64 `json:"score"`
+	Id    uint32  `json:"id"`
 }
 
 func (a *App) search(w http.ResponseWriter, r *http.Request) {
-	// TODO get query from request
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	query := os.Args[2]
+	query := r.URL.Query().Get("query")
 
 	searchResult := a.index.Search(query, tokenize)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
@@ -355,7 +359,11 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		result = append(result, response)
 	}
 
-	json.NewEncoder(w).Encode(result)
+	err := json.NewEncoder(w).Encode(result)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func main() {
