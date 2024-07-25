@@ -310,28 +310,48 @@ type App struct {
 	corpus       []string
 }
 
-func (a *App) buildIndex(w http.ResponseWriter, r *http.Request) {
-	// TODO read corpus from request
-	corpusPath := os.Args[1]
+func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-	corpus, err := ReadCorpus(corpusPath)
+	err := r.ParseMultipartForm(10 << 20) // 10 MB
 	if err != nil {
-		panic(err)
-	}
-	a.corpus = corpus // XXX
-
-	tokenized_corpus := make([][]string, 0)
-	for _, text := range corpus {
-		tokenized_corpus = append(tokenized_corpus, tokenize(text))
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
 	}
 
+	file, fileHeader, err := r.FormFile("corpus")
+	if err != nil {
+		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	var tokenizedLine []string
 	a.indexBuilder = NewTrieIndex()
-	for i, tokens := range tokenized_corpus {
-		a.indexBuilder.Add(tokens, uint32(i))
+	scanner := bufio.NewScanner(file)
+	i := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		tokenizedLine = tokenize(line)
+		a.indexBuilder.Add(tokenizedLine, uint32(i))
+		a.corpus = append(a.corpus, line)
+		i++
 	}
 
-	a.index = a.indexBuilder.Build()
+	if err := scanner.Err(); err != nil {
+		http.Error(w, "Error reading file", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("Uploaded File: %+v\n", fileHeader.Filename)
+	fmt.Printf("File Size: %+v\n", fileHeader.Size)
+	fmt.Printf("MIME Header: %+v\n", fileHeader.Header)
+
 	fmt.Fprint(w, "creating index brrr\n")
+	a.index = a.indexBuilder.Build()
 }
 
 type searchResponse struct {
@@ -369,7 +389,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 func main() {
 	app := &App{corpus: make([]string, 0)}
 
-	http.HandleFunc("/buildIndex", app.buildIndex)
+	http.HandleFunc("/uploadCorpus", app.uploadCorpus)
 	http.HandleFunc("/search", app.search)
 	http.ListenAndServe(":8345", nil)
 }
