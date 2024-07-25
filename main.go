@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -302,31 +304,92 @@ func ReadCorpus(filename string) ([]string, error) {
 	return lines, nil
 }
 
-func main() {
-	corpusPath := os.Args[1]
+type App struct {
+	indexBuilder IndexBuilder
+	index        SearchIndex
+	corpus       []string
+}
 
-	corpus, err := ReadCorpus(corpusPath)
+func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	err := r.ParseMultipartForm(10 << 20) // 10 MB
 	if err != nil {
-		panic(err)
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
 	}
 
-	tokenized_corpus := make([][]string, 0)
-	for _, text := range corpus {
-		tokenized_corpus = append(tokenized_corpus, tokenize(text))
+	file, fileHeader, err := r.FormFile("corpus")
+	if err != nil {
+		http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	var tokenizedLine []string
+	a.indexBuilder = NewTrieIndex()
+	scanner := bufio.NewScanner(file)
+	i := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		tokenizedLine = tokenize(line)
+		a.indexBuilder.Add(tokenizedLine, uint32(i))
+		a.corpus = append(a.corpus, line)
+		i++
 	}
 
-	indexBuilder := NewTrieIndex()
-	// indexBuilder := NewHashmapIndex()
-	for i, tokens := range tokenized_corpus {
-		indexBuilder.Add(tokens, uint32(i))
+	if err := scanner.Err(); err != nil {
+		http.Error(w, "Error reading file", http.StatusInternalServerError)
+		return
 	}
 
-	query := os.Args[2]
-	index := indexBuilder.Build()
+	fmt.Printf("Uploaded File: %+v\n", fileHeader.Filename)
+	fmt.Printf("File Size: %+v\n", fileHeader.Size)
+	fmt.Printf("MIME Header: %+v\n", fileHeader.Header)
 
-	searchResult := index.Search(query, tokenize)
-	matching_ids := index.Rank(searchResult.tokens, searchResult.set.ToArray())
+	fmt.Fprint(w, "creating index brrr\n")
+	a.index = a.indexBuilder.Build()
+}
+
+type searchResponse struct {
+	Text  string  `json:"text"`
+	Score float64 `json:"score"`
+	Id    uint32  `json:"id"`
+}
+
+func (a *App) search(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	query := r.URL.Query().Get("query")
+
+	searchResult := a.index.Search(query, tokenize)
+	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
+	result := make([]searchResponse, 0)
+
+	var response searchResponse
 	for _, res := range matching_ids {
-		fmt.Printf("%.2f -> %s\n", res.score, corpus[res.id])
+		response = searchResponse{Id: res.id, Score: math.Round(1000 * res.score), Text: a.corpus[res.id]}
+		result = append(result, response)
 	}
+
+	err := json.NewEncoder(w).Encode(result)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func main() {
+	app := &App{corpus: make([]string, 0)}
+
+	http.HandleFunc("/uploadCorpus", app.uploadCorpus)
+	http.HandleFunc("/search", app.search)
+	http.ListenAndServe(":8345", nil)
 }
