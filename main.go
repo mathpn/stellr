@@ -200,14 +200,17 @@ func (index *hashmapIndexBuilder) Add(tokens []string, id uint32) {
 }
 
 func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
-	var bitmap *roaring.Bitmap
+	var result *IndexResult
+	var set *roaring.Bitmap
 	for _, token := range tokens {
-		bitmap = index.invIndex.Search(token)
-		if bitmap == nil {
-			bitmap = roaring.New()
+		result = index.invIndex.Search(token)
+		if result == nil {
+			set = roaring.New()
+		} else {
+			set = result.set
 		}
-		bitmap.Add(id)
-		index.invIndex.Insert(token, bitmap) // XXX replace if exists
+		set.Add(id)
+		index.invIndex.Insert(token, set) // XXX replace if exists
 	}
 
 	termFreqs := getTermFrequency(tokens)

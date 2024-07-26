@@ -45,7 +45,7 @@ func TestPatriciaTrieSearch(t *testing.T) {
 		{"or", false, roaring.BitmapOf(19), roaring.BitmapOf(19)},
 		{"or", true, roaring.BitmapOf(20), roaring.BitmapOf(19, 20)},
 	}
-	var found *roaring.Bitmap
+	var found *IndexResult
 	for _, insert := range inserts {
 		found = trie.Search(insert.word)
 		if found != nil && !insert.inTrie {
@@ -57,7 +57,7 @@ func TestPatriciaTrieSearch(t *testing.T) {
 		if found == nil {
 			t.Errorf("word %s should be found in trie", insert.word)
 		}
-		if !insert.expectedSet.Equals(found) {
+		if found != nil && !insert.expectedSet.Equals(found.set) {
 			t.Errorf("wrong bitset returned for word %s", insert.word)
 		}
 	}

@@ -174,11 +174,11 @@ func (t *PatriciaTrie) insertNode(n *node, key string, set *roaring.Bitmap, elem
 	n.children = append(n.children, newNode)
 }
 
-func (t *PatriciaTrie) Search(key string) *roaring.Bitmap {
+func (t *PatriciaTrie) Search(key string) *IndexResult {
 	key += string('\x00')
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
-		return n.value
+		return &IndexResult{set: n.value, tokens: []string{t.strings[n.parent.id]}}
 	}
 	return nil
 }
