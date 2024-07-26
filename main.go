@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/RoaringBitmap/roaring"
 )
+
+const maxLineSize = 1 << 20 // 1 MB
 
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
@@ -335,6 +336,8 @@ func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
 	var tokenizedLine []string
 	a.indexBuilder = NewTrieIndex()
 	scanner := bufio.NewScanner(file)
+	buf := make([]byte, maxLineSize)
+	scanner.Buffer(buf, maxLineSize)
 	i := 0
 	for scanner.Scan() {
 		line := scanner.Text()
