@@ -37,11 +37,6 @@ type RankResult struct {
 	score float64
 }
 
-type hashmapIndexBuilder struct {
-	invIndex      map[string]*roaring.Bitmap
-	wordFreqArray []map[string]float64
-}
-
 type trieIndexBuilder struct {
 	invIndex      *PatriciaTrie
 	wordFreqArray []map[string]float64
@@ -50,13 +45,6 @@ type trieIndexBuilder struct {
 type docEntry struct {
 	tfIdf map[string]float64
 	norm  float64
-}
-
-type hashmapSearchIndex struct {
-	invIndex   map[string]*roaring.Bitmap
-	idf        map[string]float64
-	docEntries []*docEntry
-	defaultIdf float64
 }
 
 type trieSearchIndex struct {
@@ -106,35 +94,11 @@ func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) 
 	return r
 }
 
-func NewHashmapIndex() IndexBuilder {
-	return &hashmapIndexBuilder{
-		invIndex:      make(map[string]*roaring.Bitmap),
-		wordFreqArray: make([]map[string]float64, 0),
-	}
-}
-
 func NewTrieIndex() IndexBuilder {
 	return &trieIndexBuilder{
 		invIndex:      NewPatriciaTrie(),
 		wordFreqArray: make([]map[string]float64, 0),
 	}
-}
-
-func (index *hashmapSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
-	var r *roaring.Bitmap
-	tokens := tokenizer(query)
-	for _, token := range tokens {
-		if bitmap, ok := index.invIndex[token]; ok {
-			if r == nil {
-				r = bitmap
-			} else {
-				r.And(bitmap)
-			}
-		} else {
-			return nil
-		}
-	}
-	return &IndexResult{set: r, tokens: tokens}
 }
 
 func computeNorm(tfIdf map[string]float64) float64 {
@@ -143,35 +107,6 @@ func computeNorm(tfIdf map[string]float64) float64 {
 		norm += queryCount * queryCount
 	}
 	return norm
-}
-
-func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
-	termFreqs := getTermFrequency(tokens)
-	result := make([]RankResult, len(docIds))
-
-	var refCount, invNorm, queryNorm float64
-	var doc *docEntry
-	for i, id := range docIds {
-		doc = index.docEntries[id]
-		for token, value := range termFreqs {
-			tokenIdf, ok := index.idf[token]
-			if !ok {
-				tokenIdf = index.defaultIdf
-			}
-			refCount = doc.tfIdf[token]
-			result[i].id = id
-			result[i].score += value * refCount * tokenIdf
-			queryNorm += value * value * tokenIdf * tokenIdf
-		}
-
-		invNorm = 1 / math.Sqrt(queryNorm*doc.norm+1e-8)
-		result[i].score = result[i].score * invNorm
-	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].score > result[j].score // descending order
-	})
-	return result
 }
 
 func getTermFrequency(tokens []string) map[string]float64 {
@@ -185,19 +120,6 @@ func getTermFrequency(tokens []string) map[string]float64 {
 		termFreqs[token] = float64(count) / nTokens
 	}
 	return termFreqs
-}
-
-func (index *hashmapIndexBuilder) Add(tokens []string, id uint32) {
-	for _, token := range tokens {
-		bitmap := index.invIndex[token]
-		if bitmap == nil {
-			index.invIndex[token] = roaring.New()
-		}
-		index.invIndex[token].Add(id)
-	}
-
-	termFreqs := getTermFrequency(tokens)
-	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
 }
 
 func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
@@ -216,40 +138,6 @@ func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 
 	termFreqs := getTermFrequency(tokens)
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
-}
-
-func (index *hashmapIndexBuilder) Build() SearchIndex {
-	idf := make(map[string]float64, 0)
-	nDocs := len(index.wordFreqArray)
-
-	for token, set := range index.invIndex {
-		idf[token] = math.Log(float64(nDocs) / float64(set.GetCardinality()))
-	}
-
-	docEntries := make([]*docEntry, len(index.wordFreqArray))
-	var doc *docEntry
-	for i, wordFreq := range index.wordFreqArray {
-		doc = &docEntry{}
-		for token, freq := range wordFreq {
-			tokenIdf, ok := idf[token]
-			if !ok {
-				panic("oh no") // XXX
-			}
-			wordFreq[token] = freq * tokenIdf * tokenIdf
-		}
-
-		doc.tfIdf = wordFreq
-		doc.norm = computeNorm(doc.tfIdf)
-
-		docEntries[i] = doc
-	}
-
-	return &hashmapSearchIndex{
-		invIndex:   index.invIndex,
-		idf:        idf,
-		docEntries: docEntries,
-		defaultIdf: math.Log(1 / float64(nDocs+1)),
-	}
 }
 
 func (index *trieIndexBuilder) Build() SearchIndex {
