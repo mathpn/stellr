@@ -15,6 +15,14 @@ import (
 
 const maxLineSize = 1 << 20 // 1 MB
 
+type SearchType int
+
+const (
+	ExactSearch SearchType = iota
+	PrefixSearch
+	FuzzySearch
+)
+
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
 	return strings.FieldsFunc(text, func(r rune) bool {
@@ -28,7 +36,7 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, tokenizer func(string) []string) *IndexResult
+	Search(query string, searchType SearchType) *IndexResult
 	Rank(tokens []string, docIds []uint32) []RankResult
 }
 
@@ -83,11 +91,21 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	return result
 }
 
-func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
+func (t *trieSearchIndex) Search(query string, searchType SearchType) *IndexResult {
+	var searchFn func(key string) *IndexResult
+	switch searchType {
+	case ExactSearch:
+		searchFn = t.invIndex.Search
+	case PrefixSearch:
+		searchFn = t.invIndex.StartsWith
+	case FuzzySearch:
+		panic("oh no") // XXX
+	}
+
 	var res *IndexResult
 	r := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
-	for _, token := range tokenizer(query) {
-		if res = t.invIndex.StartsWith(token); res != nil {
+	for _, token := range tokenize(query) {
+		if res = searchFn(token); res != nil {
 			r.Combine(res)
 		}
 	}
@@ -242,8 +260,21 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	query := r.URL.Query().Get("query")
+	typeString := r.URL.Query().Get("type")
 
-	searchResult := a.index.Search(query, tokenize)
+	var searchType SearchType
+	switch typeString {
+	case "exact":
+		searchType = ExactSearch
+	case "prefix":
+		searchType = PrefixSearch
+	case "fuzzy":
+		searchType = FuzzySearch
+	default:
+		searchType = ExactSearch
+	}
+
+	searchResult := a.index.Search(query, searchType)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
 	result := make([]searchResponse, 0)
 
