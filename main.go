@@ -66,18 +66,18 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	termFreqs := getTermFrequency(tokens)
 	result := make([]RankResult, len(docIds))
 
-	var refCount, invNorm, queryNorm float64
 	var doc *docEntry
 	for i, id := range docIds {
+		var refValue, invNorm, queryNorm float64
 		doc = t.docEntries[id]
 		for token, value := range termFreqs {
 			tokenIdf, ok := t.idf[token]
 			if !ok {
 				tokenIdf = t.defaultIdf
 			}
-			refCount = doc.tfIdf[token]
+			refValue = doc.tfIdf[token]
 			result[i].id = id
-			result[i].score += value * refCount * tokenIdf
+			result[i].score += value * tokenIdf * refValue
 			queryNorm += value * value * tokenIdf * tokenIdf
 		}
 
@@ -121,8 +121,8 @@ func NewTrieIndex() IndexBuilder {
 
 func computeNorm(tfIdf map[string]float64) float64 {
 	var norm float64
-	for _, queryCount := range tfIdf {
-		norm += queryCount * queryCount
+	for _, value := range tfIdf {
+		norm += value * value
 	}
 	return norm
 }
@@ -178,7 +178,7 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 			if !ok {
 				panic("oh no") // XXX
 			}
-			wordFreq[token] = freq * tokenIdf * tokenIdf
+			wordFreq[token] = freq * tokenIdf
 		}
 		doc.tfIdf = wordFreq
 		doc.norm = computeNorm(doc.tfIdf)
