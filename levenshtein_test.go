@@ -15,6 +15,12 @@ func TestLevenshtein(t *testing.T) {
 		{"kitten", "kind", 4},
 		{"cool", "coil", 1},
 		{"tool", "too", 1},
+		{"tool", "tools", 1},
+		{"tool", "itool", 1},
+		{"and", "", 3},
+		{"", "and", 3},
+		{"", "", 0},
+		{"poise", "poise", 0},
 	}
 	var res int
 	for _, input := range inputs {
