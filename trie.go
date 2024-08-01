@@ -205,7 +205,9 @@ func (t *PatriciaTrie) Search(key string) *IndexResult {
 	key += string('\x00')
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
-		return &IndexResult{set: n.value, tokens: []string{t.strings[n.parent.id]}}
+		label := t.strings[n.parent.id]
+		label = label[0 : len(label)-1]
+		return &IndexResult{set: n.value, tokens: []string{label}}
 	}
 	return nil
 }
