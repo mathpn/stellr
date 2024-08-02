@@ -125,6 +125,33 @@ func (t *PatriciaTrie) search(key string) (*node, int, int) {
 	return currentNode, elementsFound, 0
 }
 
+func (t *PatriciaTrie) fuzzySearch(node *node, key string, limit int, length int, matchedNodes []*node) []*node {
+	partialStr := ""
+	if node.parent != nil {
+		length += node.parent.len
+		partialStr = t.strings[node.parent.id][0:length]
+	}
+	l := min(len(key), length)
+	k := key[0:l]
+
+	distance := LevenshteinDistance(partialStr, k)
+	if distance <= limit {
+		for _, child := range node.children {
+			matchedNodes = t.fuzzySearch(child, key, limit, length, matchedNodes)
+		}
+	}
+
+	if node.isLeaf() {
+		if l < len(key) {
+			distance = LevenshteinDistance(partialStr, key)
+		}
+		if distance <= limit {
+			matchedNodes = append(matchedNodes, node)
+		}
+	}
+	return matchedNodes
+}
+
 func (t *PatriciaTrie) Insert(key string, set *roaring.Bitmap) {
 	key += string('\x00')
 	lenKey := len(key)
@@ -178,9 +205,26 @@ func (t *PatriciaTrie) Search(key string) *IndexResult {
 	key += string('\x00')
 	n, elementsFound, _ := t.search(key)
 	if elementsFound == len(key) {
-		return &IndexResult{set: n.value, tokens: []string{t.strings[n.parent.id]}}
+		label := t.strings[n.parent.id]
+		label = label[0 : len(label)-1]
+		return &IndexResult{set: n.value, tokens: []string{label}}
 	}
 	return nil
+}
+
+func (t *PatriciaTrie) FuzzySearch(key string, limit int) *IndexResult {
+	key += string('\x00')
+	nodes := t.fuzzySearch(t.root, key, limit, 0, make([]*node, 0))
+	res := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
+
+	var r *IndexResult
+	for _, n := range nodes {
+		label := t.strings[n.parent.id]
+		label = label[0 : len(label)-1]
+		r = &IndexResult{set: n.value, tokens: []string{label}}
+		res.Combine(r)
+	}
+	return res
 }
 
 type IndexResult struct {

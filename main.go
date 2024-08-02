@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -14,6 +15,14 @@ import (
 )
 
 const maxLineSize = 1 << 20 // 1 MB
+
+type SearchType int
+
+const (
+	ExactSearch SearchType = iota
+	PrefixSearch
+	FuzzySearch
+)
 
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
@@ -28,18 +37,13 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, tokenizer func(string) []string) *IndexResult
+	Search(query string, searchType SearchType, distance int) *IndexResult
 	Rank(tokens []string, docIds []uint32) []RankResult
 }
 
 type RankResult struct {
 	id    uint32
 	score float64
-}
-
-type hashmapIndexBuilder struct {
-	invIndex      map[string]*roaring.Bitmap
-	wordFreqArray []map[string]float64
 }
 
 type trieIndexBuilder struct {
@@ -50,13 +54,6 @@ type trieIndexBuilder struct {
 type docEntry struct {
 	tfIdf map[string]float64
 	norm  float64
-}
-
-type hashmapSearchIndex struct {
-	invIndex   map[string]*roaring.Bitmap
-	idf        map[string]float64
-	docEntries []*docEntry
-	defaultIdf float64
 }
 
 type trieSearchIndex struct {
@@ -70,18 +67,18 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	termFreqs := getTermFrequency(tokens)
 	result := make([]RankResult, len(docIds))
 
-	var refCount, invNorm, queryNorm float64
 	var doc *docEntry
 	for i, id := range docIds {
+		var refValue, invNorm, queryNorm float64
 		doc = t.docEntries[id]
 		for token, value := range termFreqs {
 			tokenIdf, ok := t.idf[token]
 			if !ok {
 				tokenIdf = t.defaultIdf
 			}
-			refCount = doc.tfIdf[token]
+			refValue = doc.tfIdf[token]
 			result[i].id = id
-			result[i].score += value * refCount * tokenIdf
+			result[i].score += value * tokenIdf * refValue
 			queryNorm += value * value * tokenIdf * tokenIdf
 		}
 
@@ -95,22 +92,25 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	return result
 }
 
-func (t *trieSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
+func (t *trieSearchIndex) Search(query string, searchType SearchType, distance int) *IndexResult {
+	var searchFn func(key string) *IndexResult
+	switch searchType {
+	case ExactSearch:
+		searchFn = t.invIndex.Search
+	case PrefixSearch:
+		searchFn = t.invIndex.StartsWith
+	case FuzzySearch:
+		searchFn = func(key string) *IndexResult { return t.invIndex.FuzzySearch(key, distance) }
+	}
+
 	var res *IndexResult
 	r := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
-	for _, token := range tokenizer(query) {
-		if res = t.invIndex.StartsWith(token); res != nil {
+	for _, token := range tokenize(query) {
+		if res = searchFn(token); res != nil {
 			r.Combine(res)
 		}
 	}
 	return r
-}
-
-func NewHashmapIndex() IndexBuilder {
-	return &hashmapIndexBuilder{
-		invIndex:      make(map[string]*roaring.Bitmap),
-		wordFreqArray: make([]map[string]float64, 0),
-	}
 }
 
 func NewTrieIndex() IndexBuilder {
@@ -120,58 +120,12 @@ func NewTrieIndex() IndexBuilder {
 	}
 }
 
-func (index *hashmapSearchIndex) Search(query string, tokenizer func(string) []string) *IndexResult {
-	var r *roaring.Bitmap
-	tokens := tokenizer(query)
-	for _, token := range tokens {
-		if bitmap, ok := index.invIndex[token]; ok {
-			if r == nil {
-				r = bitmap
-			} else {
-				r.And(bitmap)
-			}
-		} else {
-			return nil
-		}
-	}
-	return &IndexResult{set: r, tokens: tokens}
-}
-
 func computeNorm(tfIdf map[string]float64) float64 {
 	var norm float64
-	for _, queryCount := range tfIdf {
-		norm += queryCount * queryCount
+	for _, value := range tfIdf {
+		norm += value * value
 	}
 	return norm
-}
-
-func (index *hashmapSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
-	termFreqs := getTermFrequency(tokens)
-	result := make([]RankResult, len(docIds))
-
-	var refCount, invNorm, queryNorm float64
-	var doc *docEntry
-	for i, id := range docIds {
-		doc = index.docEntries[id]
-		for token, value := range termFreqs {
-			tokenIdf, ok := index.idf[token]
-			if !ok {
-				tokenIdf = index.defaultIdf
-			}
-			refCount = doc.tfIdf[token]
-			result[i].id = id
-			result[i].score += value * refCount * tokenIdf
-			queryNorm += value * value * tokenIdf * tokenIdf
-		}
-
-		invNorm = 1 / math.Sqrt(queryNorm*doc.norm+1e-8)
-		result[i].score = result[i].score * invNorm
-	}
-
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].score > result[j].score // descending order
-	})
-	return result
 }
 
 func getTermFrequency(tokens []string) map[string]float64 {
@@ -187,19 +141,6 @@ func getTermFrequency(tokens []string) map[string]float64 {
 	return termFreqs
 }
 
-func (index *hashmapIndexBuilder) Add(tokens []string, id uint32) {
-	for _, token := range tokens {
-		bitmap := index.invIndex[token]
-		if bitmap == nil {
-			index.invIndex[token] = roaring.New()
-		}
-		index.invIndex[token].Add(id)
-	}
-
-	termFreqs := getTermFrequency(tokens)
-	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
-}
-
 func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 	var result *IndexResult
 	var set *roaring.Bitmap
@@ -211,45 +152,11 @@ func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 			set = result.set
 		}
 		set.Add(id)
-		index.invIndex.Insert(token, set) // XXX replace if exists
+		index.invIndex.Insert(token, set)
 	}
 
 	termFreqs := getTermFrequency(tokens)
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
-}
-
-func (index *hashmapIndexBuilder) Build() SearchIndex {
-	idf := make(map[string]float64, 0)
-	nDocs := len(index.wordFreqArray)
-
-	for token, set := range index.invIndex {
-		idf[token] = math.Log(float64(nDocs) / float64(set.GetCardinality()))
-	}
-
-	docEntries := make([]*docEntry, len(index.wordFreqArray))
-	var doc *docEntry
-	for i, wordFreq := range index.wordFreqArray {
-		doc = &docEntry{}
-		for token, freq := range wordFreq {
-			tokenIdf, ok := idf[token]
-			if !ok {
-				panic("oh no") // XXX
-			}
-			wordFreq[token] = freq * tokenIdf * tokenIdf
-		}
-
-		doc.tfIdf = wordFreq
-		doc.norm = computeNorm(doc.tfIdf)
-
-		docEntries[i] = doc
-	}
-
-	return &hashmapSearchIndex{
-		invIndex:   index.invIndex,
-		idf:        idf,
-		docEntries: docEntries,
-		defaultIdf: math.Log(1 / float64(nDocs+1)),
-	}
 }
 
 func (index *trieIndexBuilder) Build() SearchIndex {
@@ -270,9 +177,9 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 		for token, freq := range wordFreq {
 			tokenIdf, ok := idf[token]
 			if !ok {
-				panic("oh no") // XXX
+				panic("error: no IDF found")
 			}
-			wordFreq[token] = freq * tokenIdf * tokenIdf
+			wordFreq[token] = freq * tokenIdf
 		}
 		doc.tfIdf = wordFreq
 		doc.norm = computeNorm(doc.tfIdf)
@@ -354,8 +261,34 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	query := r.URL.Query().Get("query")
+	typeString := r.URL.Query().Get("type")
+	d := r.URL.Query().Get("distance")
 
-	searchResult := a.index.Search(query, tokenize)
+	var dist int
+	var err error
+	if d == "" {
+		dist = 0
+	} else {
+		dist, err = strconv.Atoi(d)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	var searchType SearchType
+	switch typeString {
+	case "exact":
+		searchType = ExactSearch
+	case "prefix":
+		searchType = PrefixSearch
+	case "fuzzy":
+		searchType = FuzzySearch
+	default:
+		searchType = ExactSearch
+	}
+
+	searchResult := a.index.Search(query, searchType, dist)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
 	result := make([]searchResponse, 0)
 
@@ -365,7 +298,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		result = append(result, response)
 	}
 
-	err := json.NewEncoder(w).Encode(result)
+	err = json.NewEncoder(w).Encode(result)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
