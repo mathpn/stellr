@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -36,7 +37,7 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, searchType SearchType) *IndexResult
+	Search(query string, searchType SearchType, distance int) *IndexResult
 	Rank(tokens []string, docIds []uint32) []RankResult
 }
 
@@ -91,7 +92,7 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	return result
 }
 
-func (t *trieSearchIndex) Search(query string, searchType SearchType) *IndexResult {
+func (t *trieSearchIndex) Search(query string, searchType SearchType, distance int) *IndexResult {
 	var searchFn func(key string) *IndexResult
 	switch searchType {
 	case ExactSearch:
@@ -99,7 +100,7 @@ func (t *trieSearchIndex) Search(query string, searchType SearchType) *IndexResu
 	case PrefixSearch:
 		searchFn = t.invIndex.StartsWith
 	case FuzzySearch:
-		panic("oh no") // XXX
+		searchFn = func(key string) *IndexResult { return t.invIndex.FuzzySearch(key, distance) }
 	}
 
 	var res *IndexResult
@@ -261,6 +262,19 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	query := r.URL.Query().Get("query")
 	typeString := r.URL.Query().Get("type")
+	d := r.URL.Query().Get("distance")
+
+	var dist int
+	var err error
+	if d == "" {
+		dist = 0
+	} else {
+		dist, err = strconv.Atoi(d)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	var searchType SearchType
 	switch typeString {
@@ -274,7 +288,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		searchType = ExactSearch
 	}
 
-	searchResult := a.index.Search(query, searchType)
+	searchResult := a.index.Search(query, searchType, dist)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
 	result := make([]searchResponse, 0)
 
@@ -284,7 +298,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		result = append(result, response)
 	}
 
-	err := json.NewEncoder(w).Encode(result)
+	err = json.NewEncoder(w).Encode(result)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
