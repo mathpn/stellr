@@ -127,3 +127,40 @@ func TestPatriciaTriePrefix(t *testing.T) {
 		}
 	}
 }
+
+type fuzzySearchTest struct {
+	word        string
+	distance    int
+	inTrie      bool
+	set         *roaring.Bitmap
+	expectedSet *roaring.Bitmap
+}
+
+func TestPatriciaTrieFuzzySearch(t *testing.T) {
+	trie := NewPatriciaTrie()
+	inserts := []fuzzySearchTest{
+		{"orange", 0, false, roaring.BitmapOf(1), roaring.BitmapOf(1)},
+		{"orang", 1, true, roaring.BitmapOf(1), roaring.BitmapOf(1)},
+		{"organism", 0, false, roaring.BitmapOf(2), roaring.BitmapOf(2)},
+		{"oregon", 0, false, roaring.BitmapOf(18), roaring.BitmapOf(18)},
+		{"ore", 3, true, roaring.BitmapOf(17), roaring.BitmapOf(1, 17, 18)},
+		{"ore", 1, true, roaring.BitmapOf(17), roaring.BitmapOf(17)},
+		{"ori", 0, false, roaring.BitmapOf(19), roaring.BitmapOf(19)},
+	}
+	var found *IndexResult
+	for _, insert := range inserts {
+		found = trie.Search(insert.word)
+		if found != nil && !insert.inTrie {
+			t.Errorf("word %s should not be found in trie", insert.word)
+		}
+		trie.Insert(insert.word, insert.set)
+
+		found = trie.FuzzySearch(insert.word, insert.distance)
+		if found == nil {
+			t.Errorf("word %s should be found in trie", insert.word)
+		}
+		if found != nil && !insert.expectedSet.Equals(found.set) {
+			t.Errorf("wrong bitset returned for word %s: %v vs %v", insert.word, found.set, insert.expectedSet)
+		}
+	}
+}
