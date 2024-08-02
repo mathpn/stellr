@@ -217,7 +217,7 @@ func (t *PatriciaTrie) FuzzySearch(key string, limit int) *IndexResult {
 	nodes := t.fuzzySearch(t.root, key, limit, 0, make([]*node, 0))
 	res := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
 
-	var r *IndexResult // XXX
+	var r *IndexResult
 	for _, n := range nodes {
 		label := t.strings[n.parent.id]
 		label = label[0 : len(label)-1]
