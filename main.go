@@ -152,7 +152,7 @@ func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 			set = result.set
 		}
 		set.Add(id)
-		index.invIndex.Insert(token, set) // XXX replace if exists
+		index.invIndex.Insert(token, set)
 	}
 
 	termFreqs := getTermFrequency(tokens)
@@ -177,7 +177,7 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 		for token, freq := range wordFreq {
 			tokenIdf, ok := idf[token]
 			if !ok {
-				panic("oh no") // XXX
+				panic("error: no IDF found")
 			}
 			wordFreq[token] = freq * tokenIdf
 		}
