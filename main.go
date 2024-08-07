@@ -16,12 +16,20 @@ import (
 
 const maxLineSize = 1 << 20 // 1 MB
 
-type SearchType int
+type (
+	SearchType int
+	Operator   int
+)
 
 const (
 	ExactSearch SearchType = iota
 	PrefixSearch
 	FuzzySearch
+)
+
+const (
+	Or Operator = iota
+	And
 )
 
 func tokenize(text string) []string {
@@ -37,7 +45,7 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, searchType SearchType, distance int) *IndexResult
+	Search(query string, searchType SearchType, operator Operator, distance int) *IndexResult
 	Rank(tokens []string, docIds []uint32) []RankResult
 }
 
@@ -92,8 +100,11 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 	return result
 }
 
-func (t *trieSearchIndex) Search(query string, searchType SearchType, distance int) *IndexResult {
+func (t *trieSearchIndex) Search(
+	query string, searchType SearchType, operator Operator, distance int,
+) *IndexResult {
 	var searchFn func(key string) *IndexResult
+
 	switch searchType {
 	case ExactSearch:
 		searchFn = t.invIndex.Search
@@ -105,9 +116,16 @@ func (t *trieSearchIndex) Search(query string, searchType SearchType, distance i
 
 	var res *IndexResult
 	r := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
+
+	var combineFn func(res *IndexResult)
+	if operator == And {
+		combineFn = r.CombineAnd
+	} else {
+		combineFn = r.CombineOr
+	}
 	for _, token := range tokenize(query) {
 		if res = searchFn(token); res != nil {
-			r.Combine(res)
+			combineFn(res)
 		}
 	}
 	return r
@@ -262,6 +280,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	query := r.URL.Query().Get("query")
 	typeString := r.URL.Query().Get("type")
+	operatorString := r.URL.Query().Get("operator")
 	d := r.URL.Query().Get("distance")
 
 	var dist int
@@ -288,7 +307,17 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		searchType = ExactSearch
 	}
 
-	searchResult := a.index.Search(query, searchType, dist)
+	var operator Operator
+	switch operatorString {
+	case "and":
+		operator = And
+	case "or":
+		operator = Or
+	default:
+		operator = Or
+	}
+
+	searchResult := a.index.Search(query, searchType, operator, dist)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
 	result := make([]searchResponse, 0)
 
