@@ -233,12 +233,20 @@ type IndexResult struct {
 }
 
 func (r *IndexResult) CombineOr(res *IndexResult) {
-	r.set.Or(res.set)
+	if r.set == nil {
+		r.set = res.set.Clone()
+	} else {
+		r.set.Or(res.set)
+	}
 	r.tokens = append(r.tokens, res.tokens...)
 }
 
 func (r *IndexResult) CombineAnd(res *IndexResult) {
-	r.set.And(res.set)
+	if r.set == nil {
+		r.set = res.set.Clone()
+	} else {
+		r.set.And(res.set)
+	}
 	r.tokens = append(r.tokens, res.tokens...)
 }
 

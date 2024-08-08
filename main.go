@@ -115,7 +115,7 @@ func (t *trieSearchIndex) Search(
 	}
 
 	var res *IndexResult
-	r := &IndexResult{set: roaring.New(), tokens: make([]string, 0)}
+	r := &IndexResult{set: nil, tokens: make([]string, 0)}
 
 	var combineFn func(res *IndexResult)
 	if operator == And {
