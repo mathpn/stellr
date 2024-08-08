@@ -222,7 +222,7 @@ func (t *PatriciaTrie) FuzzySearch(key string, limit int) *IndexResult {
 		label := t.strings[n.parent.id]
 		label = label[0 : len(label)-1]
 		r = &IndexResult{set: n.value, tokens: []string{label}}
-		res.Combine(r)
+		res.CombineOr(r)
 	}
 	return res
 }
@@ -232,8 +232,21 @@ type IndexResult struct {
 	tokens []string
 }
 
-func (r *IndexResult) Combine(res *IndexResult) {
-	r.set.Or(res.set)
+func (r *IndexResult) CombineOr(res *IndexResult) {
+	if r.set == nil {
+		r.set = res.set.Clone()
+	} else {
+		r.set.Or(res.set)
+	}
+	r.tokens = append(r.tokens, res.tokens...)
+}
+
+func (r *IndexResult) CombineAnd(res *IndexResult) {
+	if r.set == nil {
+		r.set = res.set.Clone()
+	} else {
+		r.set.And(res.set)
+	}
 	r.tokens = append(r.tokens, res.tokens...)
 }
 
