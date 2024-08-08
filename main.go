@@ -240,6 +240,7 @@ func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
 
 	var tokenizedLine []string
 	a.indexBuilder = NewTrieIndex()
+	a.corpus = make([]string, 0)
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, maxLineSize)
 	scanner.Buffer(buf, maxLineSize)
