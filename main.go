@@ -278,6 +278,11 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if a.index == nil {
+		http.Error(w, "No corpus has been uploaded", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	query := r.URL.Query().Get("query")
 	typeString := r.URL.Query().Get("type")
