@@ -240,6 +240,7 @@ func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
 
 	var tokenizedLine []string
 	a.indexBuilder = NewTrieIndex()
+	a.corpus = make([]string, 0)
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, maxLineSize)
 	scanner.Buffer(buf, maxLineSize)
@@ -274,6 +275,11 @@ type searchResponse struct {
 func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if a.index == nil {
+		http.Error(w, "No corpus has been uploaded", http.StatusInternalServerError)
 		return
 	}
 
