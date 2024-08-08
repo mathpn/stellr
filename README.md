@@ -68,3 +68,11 @@ curl 'localhost:8345/search?query=great&type=prefix'
 ```bash
 curl 'localhost:8345/search?query=memorable&type=fuzzy&distance=2'
 ```
+
+### Search operators
+
+By default, results that contain any of the provided words are returned. That is, an _or_ operator is used. It is possible to use an _and_ operator. With this option, only documents with **all** provided words are returned.
+
+```bash
+curl 'localhost:8345/search?query=memorable%20great&operator=and'
+```
