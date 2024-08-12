@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/RoaringBitmap/roaring"
@@ -217,6 +218,7 @@ type App struct {
 	indexBuilder IndexBuilder
 	index        SearchIndex
 	corpus       []string
+	indexLock    sync.RWMutex
 }
 
 func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +239,9 @@ func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	a.indexLock.Lock()
+	defer a.indexLock.Unlock()
 
 	var tokenizedLine []string
 	a.indexBuilder = NewTrieIndex()
@@ -322,6 +327,9 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	default:
 		operator = Or
 	}
+
+	a.indexLock.RLock()
+	defer a.indexLock.RUnlock()
 
 	searchResult := a.index.Search(query, searchType, operator, dist)
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
