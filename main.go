@@ -332,7 +332,7 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	defer a.indexLock.RUnlock()
 
 	searchResult := a.index.Search(query, searchType, operator, dist)
-	matching_ids := a.index.Rank(searchResult.tokens, searchResult.set.ToArray())
+	matching_ids := a.index.Rank(searchResult.tokens, searchResult.DocIds())
 	result := make([]searchResponse, 0)
 
 	var response searchResponse

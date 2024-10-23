@@ -250,6 +250,14 @@ func (r *IndexResult) CombineAnd(res *IndexResult) {
 	r.tokens = append(r.tokens, res.tokens...)
 }
 
+func (r *IndexResult) DocIds() []uint32 {
+	if r.set == nil {
+		return []uint32{}
+	}
+
+	return r.set.ToArray()
+}
+
 func (t *PatriciaTrie) mergeChildren(n *node, result *IndexResult) *IndexResult {
 	if n.isLeaf() {
 		label := t.strings[n.parent.id]
