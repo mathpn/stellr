@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/kljensen/snowball"
 )
 
 const maxLineSize = 1 << 20 // 1 MB
@@ -35,9 +36,19 @@ const (
 
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
-	return strings.FieldsFunc(text, func(r rune) bool {
+	tokens := strings.FieldsFunc(text, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r)
 	})
+
+	for i, token := range tokens {
+		// XXX language
+		stemmed, err := snowball.Stem(token, "english", false)
+		if err != nil { // err is only related to language
+			continue
+		}
+		tokens[i] = stemmed
+	}
+	return tokens
 }
 
 type IndexBuilder interface {
