@@ -14,6 +14,13 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/kljensen/snowball"
+	"github.com/kljensen/snowball/english"
+	"github.com/kljensen/snowball/french"
+	"github.com/kljensen/snowball/hungarian"
+	"github.com/kljensen/snowball/norwegian"
+	"github.com/kljensen/snowball/russian"
+	"github.com/kljensen/snowball/spanish"
+	"github.com/kljensen/snowball/swedish"
 )
 
 const maxLineSize = 1 << 20 // 1 MB
@@ -42,7 +49,32 @@ func tokenize(text string) []string {
 	return tokens
 }
 
-func stem(tokens []string, language string) ([]string, error) {
+func filterStopWords(tokens []string, language string) []string {
+	stopWordFuncs := map[string]func(string) bool{
+		"english":   english.IsStopWord,
+		"french":    french.IsStopWord,
+		"hungarian": hungarian.IsStopWord,
+		"norwegian": norwegian.IsStopWord,
+		"russian":   russian.IsStopWord,
+		"spanish":   spanish.IsStopWord,
+		"swedish":   swedish.IsStopWord,
+	}
+
+	isStopWord, ok := stopWordFuncs[language]
+	if !ok {
+		return tokens
+	}
+
+	var result []string
+	for _, token := range tokens {
+		if !isStopWord(token) {
+			result = append(result, token)
+		}
+	}
+	return result
+}
+
+func stemTokens(tokens []string, language string) ([]string, error) {
 	for i, token := range tokens {
 		stemmed, err := snowball.Stem(token, language, false)
 		if err != nil {
