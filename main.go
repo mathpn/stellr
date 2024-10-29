@@ -39,16 +39,18 @@ func tokenize(text string) []string {
 	tokens := strings.FieldsFunc(text, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r)
 	})
+	return tokens
+}
 
+func stem(tokens []string, language string) ([]string, error) {
 	for i, token := range tokens {
-		// XXX language
-		stemmed, err := snowball.Stem(token, "english", false)
-		if err != nil { // err is only related to language
-			continue
+		stemmed, err := snowball.Stem(token, language, false)
+		if err != nil {
+			return nil, err
 		}
 		tokens[i] = stemmed
 	}
-	return tokens
+	return tokens, nil
 }
 
 type IndexBuilder interface {
