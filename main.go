@@ -23,7 +23,11 @@ import (
 	"github.com/kljensen/snowball/swedish"
 )
 
-const maxLineSize = 1 << 20 // 1 MB
+const (
+	maxLineSize     = 1 << 20 // 1 MB
+	defaultLanguage = "english"
+	defaultStem     = false
+)
 
 type (
 	SearchType int
@@ -107,7 +111,7 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, searchType SearchType, operator Operator, distance int) *IndexResult
+	Search(query string, searchType SearchType, operator Operator, distance int) (*IndexResult, error)
 	Rank(tokens []string, docIds []uint32) []RankResult
 }
 
@@ -116,9 +120,15 @@ type RankResult struct {
 	score float64
 }
 
+type IndexOptions struct {
+	language string
+	stem     bool
+}
+
 type trieIndexBuilder struct {
 	invIndex      *PatriciaTrie
 	wordFreqArray []map[string]float64
+	options       IndexOptions
 }
 
 type docEntry struct {
@@ -130,6 +140,7 @@ type trieSearchIndex struct {
 	invIndex   *PatriciaTrie
 	idf        map[string]float64
 	docEntries []*docEntry
+	options    IndexOptions
 	defaultIdf float64
 }
 
@@ -164,7 +175,7 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 
 func (t *trieSearchIndex) Search(
 	query string, searchType SearchType, operator Operator, distance int,
-) *IndexResult {
+) (*IndexResult, error) {
 	var searchFn func(key string) *IndexResult
 
 	switch searchType {
@@ -185,18 +196,24 @@ func (t *trieSearchIndex) Search(
 	} else {
 		combineFn = r.CombineOr
 	}
-	for _, token := range tokenize(query) {
+	tokens, err := ProcessText(query, t.options.language, t.options.stem)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, token := range tokens {
 		if res = searchFn(token); res != nil {
 			combineFn(res)
 		}
 	}
-	return r
+	return r, nil
 }
 
-func NewTrieIndex() IndexBuilder {
+func NewTrieIndex(opts IndexOptions) IndexBuilder {
 	return &trieIndexBuilder{
 		invIndex:      NewPatriciaTrie(),
 		wordFreqArray: make([]map[string]float64, 0),
+		options:       opts,
 	}
 }
 
@@ -272,6 +289,7 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 		idf:        idf,
 		docEntries: docEntries,
 		defaultIdf: math.Log(1 / float64(nDocs+1)),
+		options:    index.options,
 	}
 }
 
@@ -301,19 +319,37 @@ func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	indexOptions := IndexOptions{language: defaultLanguage, stem: defaultStem}
+
+	if lang := r.FormValue("language"); lang != "" {
+		indexOptions.language = lang
+	}
+
+	if stemStr := r.FormValue("stem"); stemStr != "" {
+		stem, err := strconv.ParseBool(stemStr)
+		if err == nil {
+			indexOptions.stem = stem
+		}
+	}
+
 	a.indexLock.Lock()
 	defer a.indexLock.Unlock()
 
 	var tokenizedLine []string
-	a.indexBuilder = NewTrieIndex()
+	a.indexBuilder = NewTrieIndex(indexOptions)
 	a.corpus = make([]string, 0)
+
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, maxLineSize)
 	scanner.Buffer(buf, maxLineSize)
 	i := 0
 	for scanner.Scan() {
 		line := scanner.Text()
-		tokenizedLine = tokenize(line)
+		tokenizedLine, err = ProcessText(line, indexOptions.language, indexOptions.stem)
+		if err != nil {
+			http.Error(w, "Error while processing text\n"+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		a.indexBuilder.Add(tokenizedLine, uint32(i))
 		a.corpus = append(a.corpus, line)
 		i++
@@ -392,7 +428,12 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	a.indexLock.RLock()
 	defer a.indexLock.RUnlock()
 
-	searchResult := a.index.Search(query, searchType, operator, dist)
+	searchResult, err := a.index.Search(query, searchType, operator, dist)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.DocIds())
 	result := make([]searchResponse, 0)
 
