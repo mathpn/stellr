@@ -85,6 +85,22 @@ func stemTokens(tokens []string, language string) ([]string, error) {
 	return tokens, nil
 }
 
+// ProcessText performs tokenization, stop word filtering, and stemming on the given text.
+func ProcessText(text string, language string, stem bool) ([]string, error) {
+	tokens := tokenize(text)
+	tokens = filterStopWords(tokens, language)
+
+	var err error
+	if stem {
+		tokens, err = stemTokens(tokens, language)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return tokens, nil
+}
+
 type IndexBuilder interface {
 	Add(tokens []string, id uint32)
 	Build() SearchIndex
