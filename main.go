@@ -256,20 +256,20 @@ func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
 }
 
-func (index *trieIndexBuilder) Build() SearchIndex {
+func (builder *trieIndexBuilder) Build() SearchIndex {
 	idf := make(map[string]float64, 0)
-	nDocs := len(index.wordFreqArray)
+	nDocs := len(builder.wordFreqArray)
 
-	tokenSets := index.invIndex.Traversal()
+	tokenSets := builder.invIndex.Traversal()
 	var cardinality uint64
 	for _, tokenSet := range tokenSets {
 		cardinality = tokenSet.set.GetCardinality()
 		idf[tokenSet.token] = math.Log(float64(nDocs) / float64(cardinality))
 	}
 
-	docEntries := make([]*docEntry, len(index.wordFreqArray))
+	docEntries := make([]*docEntry, len(builder.wordFreqArray))
 	var doc *docEntry
-	for i, wordFreq := range index.wordFreqArray {
+	for i, wordFreq := range builder.wordFreqArray {
 		doc = &docEntry{}
 		for token, freq := range wordFreq {
 			tokenIdf, ok := idf[token]
@@ -285,11 +285,11 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 	}
 
 	return &trieSearchIndex{
-		invIndex:   index.invIndex,
+		invIndex:   builder.invIndex,
 		idf:        idf,
 		docEntries: docEntries,
 		defaultIdf: math.Log(1 / float64(nDocs+1)),
-		options:    index.options,
+		options:    builder.options,
 	}
 }
 
