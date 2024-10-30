@@ -13,9 +13,21 @@ import (
 	"unicode"
 
 	"github.com/RoaringBitmap/roaring"
+	"github.com/kljensen/snowball"
+	"github.com/kljensen/snowball/english"
+	"github.com/kljensen/snowball/french"
+	"github.com/kljensen/snowball/hungarian"
+	"github.com/kljensen/snowball/norwegian"
+	"github.com/kljensen/snowball/russian"
+	"github.com/kljensen/snowball/spanish"
+	"github.com/kljensen/snowball/swedish"
 )
 
-const maxLineSize = 1 << 20 // 1 MB
+const (
+	maxLineSize     = 1 << 20 // 1 MB
+	defaultLanguage = "english"
+	defaultStem     = false
+)
 
 type (
 	SearchType int
@@ -35,9 +47,62 @@ const (
 
 func tokenize(text string) []string {
 	text = strings.ToLower(text)
-	return strings.FieldsFunc(text, func(r rune) bool {
+	tokens := strings.FieldsFunc(text, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.IsMark(r)
 	})
+	return tokens
+}
+
+func filterStopWords(tokens []string, language string) []string {
+	stopWordFuncs := map[string]func(string) bool{
+		"english":   english.IsStopWord,
+		"french":    french.IsStopWord,
+		"hungarian": hungarian.IsStopWord,
+		"norwegian": norwegian.IsStopWord,
+		"russian":   russian.IsStopWord,
+		"spanish":   spanish.IsStopWord,
+		"swedish":   swedish.IsStopWord,
+	}
+
+	isStopWord, ok := stopWordFuncs[language]
+	if !ok {
+		return tokens
+	}
+
+	var result []string
+	for _, token := range tokens {
+		if !isStopWord(token) {
+			result = append(result, token)
+		}
+	}
+	return result
+}
+
+func stemTokens(tokens []string, language string) ([]string, error) {
+	for i, token := range tokens {
+		stemmed, err := snowball.Stem(token, language, false)
+		if err != nil {
+			return nil, err
+		}
+		tokens[i] = stemmed
+	}
+	return tokens, nil
+}
+
+// ProcessText performs tokenization, stop word filtering, and stemming on the given text.
+func ProcessText(text string, language string, stem bool) ([]string, error) {
+	tokens := tokenize(text)
+	tokens = filterStopWords(tokens, language)
+
+	var err error
+	if stem {
+		tokens, err = stemTokens(tokens, language)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return tokens, nil
 }
 
 type IndexBuilder interface {
@@ -46,7 +111,7 @@ type IndexBuilder interface {
 }
 
 type SearchIndex interface {
-	Search(query string, searchType SearchType, operator Operator, distance int) *IndexResult
+	Search(query string, searchType SearchType, operator Operator, distance int) (*IndexResult, error)
 	Rank(tokens []string, docIds []uint32) []RankResult
 }
 
@@ -55,9 +120,15 @@ type RankResult struct {
 	score float64
 }
 
+type IndexOptions struct {
+	language string
+	stem     bool
+}
+
 type trieIndexBuilder struct {
 	invIndex      *PatriciaTrie
 	wordFreqArray []map[string]float64
+	options       IndexOptions
 }
 
 type docEntry struct {
@@ -69,6 +140,7 @@ type trieSearchIndex struct {
 	invIndex   *PatriciaTrie
 	idf        map[string]float64
 	docEntries []*docEntry
+	options    IndexOptions
 	defaultIdf float64
 }
 
@@ -103,7 +175,7 @@ func (t *trieSearchIndex) Rank(tokens []string, docIds []uint32) []RankResult {
 
 func (t *trieSearchIndex) Search(
 	query string, searchType SearchType, operator Operator, distance int,
-) *IndexResult {
+) (*IndexResult, error) {
 	var searchFn func(key string) *IndexResult
 
 	switch searchType {
@@ -124,18 +196,24 @@ func (t *trieSearchIndex) Search(
 	} else {
 		combineFn = r.CombineOr
 	}
-	for _, token := range tokenize(query) {
+	tokens, err := ProcessText(query, t.options.language, t.options.stem)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, token := range tokens {
 		if res = searchFn(token); res != nil {
 			combineFn(res)
 		}
 	}
-	return r
+	return r, nil
 }
 
-func NewTrieIndex() IndexBuilder {
+func NewTrieIndex(opts IndexOptions) IndexBuilder {
 	return &trieIndexBuilder{
 		invIndex:      NewPatriciaTrie(),
 		wordFreqArray: make([]map[string]float64, 0),
+		options:       opts,
 	}
 }
 
@@ -178,20 +256,20 @@ func (index *trieIndexBuilder) Add(tokens []string, id uint32) {
 	index.wordFreqArray = append(index.wordFreqArray, termFreqs)
 }
 
-func (index *trieIndexBuilder) Build() SearchIndex {
+func (builder *trieIndexBuilder) Build() SearchIndex {
 	idf := make(map[string]float64, 0)
-	nDocs := len(index.wordFreqArray)
+	nDocs := len(builder.wordFreqArray)
 
-	tokenSets := index.invIndex.Traversal()
+	tokenSets := builder.invIndex.Traversal()
 	var cardinality uint64
 	for _, tokenSet := range tokenSets {
 		cardinality = tokenSet.set.GetCardinality()
 		idf[tokenSet.token] = math.Log(float64(nDocs) / float64(cardinality))
 	}
 
-	docEntries := make([]*docEntry, len(index.wordFreqArray))
+	docEntries := make([]*docEntry, len(builder.wordFreqArray))
 	var doc *docEntry
-	for i, wordFreq := range index.wordFreqArray {
+	for i, wordFreq := range builder.wordFreqArray {
 		doc = &docEntry{}
 		for token, freq := range wordFreq {
 			tokenIdf, ok := idf[token]
@@ -207,10 +285,11 @@ func (index *trieIndexBuilder) Build() SearchIndex {
 	}
 
 	return &trieSearchIndex{
-		invIndex:   index.invIndex,
+		invIndex:   builder.invIndex,
 		idf:        idf,
 		docEntries: docEntries,
 		defaultIdf: math.Log(1 / float64(nDocs+1)),
+		options:    builder.options,
 	}
 }
 
@@ -240,19 +319,37 @@ func (a *App) uploadCorpus(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	indexOptions := IndexOptions{language: defaultLanguage, stem: defaultStem}
+
+	if lang := r.FormValue("language"); lang != "" {
+		indexOptions.language = lang
+	}
+
+	if stemStr := r.FormValue("stem"); stemStr != "" {
+		stem, err := strconv.ParseBool(stemStr)
+		if err == nil {
+			indexOptions.stem = stem
+		}
+	}
+
 	a.indexLock.Lock()
 	defer a.indexLock.Unlock()
 
 	var tokenizedLine []string
-	a.indexBuilder = NewTrieIndex()
+	a.indexBuilder = NewTrieIndex(indexOptions)
 	a.corpus = make([]string, 0)
+
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, maxLineSize)
 	scanner.Buffer(buf, maxLineSize)
 	i := 0
 	for scanner.Scan() {
 		line := scanner.Text()
-		tokenizedLine = tokenize(line)
+		tokenizedLine, err = ProcessText(line, indexOptions.language, indexOptions.stem)
+		if err != nil {
+			http.Error(w, "Error while processing text\n"+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		a.indexBuilder.Add(tokenizedLine, uint32(i))
 		a.corpus = append(a.corpus, line)
 		i++
@@ -331,7 +428,12 @@ func (a *App) search(w http.ResponseWriter, r *http.Request) {
 	a.indexLock.RLock()
 	defer a.indexLock.RUnlock()
 
-	searchResult := a.index.Search(query, searchType, operator, dist)
+	searchResult, err := a.index.Search(query, searchType, operator, dist)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	matching_ids := a.index.Rank(searchResult.tokens, searchResult.DocIds())
 	result := make([]searchResponse, 0)
 
