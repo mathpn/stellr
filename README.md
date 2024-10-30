@@ -26,6 +26,20 @@ The text corpus should be a plain text file with one text document per line. The
 curl -X POST http://localhost:8345/uploadCorpus -F "corpus=@corpus.txt"
 ```
 
+You can specify the language, otherwise English is used:
+
+```bash
+curl -X POST 'http://localhost:8345/uploadCorpus?language=english' -F "corpus=@merged_text.txt"
+```
+
+The language is used to remove stop words and, optionally, stemming. To enable stemming, you should pass the `stem` parameter as `true`:
+
+```bash
+curl -X POST 'http://localhost:8345/uploadCorpus?language=english&stem=true' -F "corpus=@merged_text.txt"
+```
+
+The following languages are supported: English, Spanish, French, Russian, Swedish, Norwegian, Hungarian.
+
 ### Querying
 
 Sample command with curl:
