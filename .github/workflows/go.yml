@@ -1,0 +1,34 @@
+name: Go release
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.23"
+
+      - name: Display the release tag
+        run: echo ${{  github.ref_name }}
+
+      - name: Build the executables
+        run: ./build.sh ${{ github.ref_name }}
+
+      - name: List the executables
+        run: ls -l ./release
+
+      - name: Upload the stellr binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          file: ./release/stellr-*
+          file_glob: true
